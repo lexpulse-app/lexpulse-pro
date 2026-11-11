@@ -418,6 +418,23 @@ if meniu == "📊 Panou Monitorizare":
             "ultima_minuta": "Ultima Soluție Publicată"
         })
         st.dataframe(afisaj, use_container_width=True)
+
+        # --- GESTIONARE SI ELIMINARE DOSAR ---
+        st.write('')
+        c_del1, c_del2 = st.columns([3, 1])
+        with c_del1:
+            lista_stergere = df['numar_dosar'].tolist() if 'numar_dosar' in df.columns else []
+            dosar_ales_del = st.selectbox('🗑️ Elimină un dosar din monitorizare:', lista_stergere if lista_stergere else ['Niciun dosar'])
+        with c_del2:
+            st.write('')
+            st.write('')
+            if st.button('Șterge Dosar', type='primary'):
+                if dosar_ales_del and dosar_ales_del != 'Niciun dosar':
+                    baza_date.sterge_dosar(companie_id, dosar_ales_del)
+                    st.success(f'Dosarul {dosar_ales_del} a fost eliminat!')
+                    st.rerun()
+        # -------------------------------------
+
     else:
         st.info("Portofoliul firmei este gol. Utilizați 'Import & Adăugare' pentru primele cauze.")
 
