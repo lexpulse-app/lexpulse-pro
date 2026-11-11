@@ -5,3 +5,4 @@ reportlab
 icalendar
 python-dotenv
 requests
+zeep
