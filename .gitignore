@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.sesiune_activa.json
+scheduler.log
+asistent_juridic.db
