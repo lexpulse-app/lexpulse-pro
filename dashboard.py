@@ -321,7 +321,7 @@ if st.sidebar.button("Deconectare Securizată 🚪", use_container_width=True):
 st.sidebar.write("---")
 meniu = st.sidebar.radio(
     "Navigare",
-    ["📊 Panou Monitorizare", "📥 Import & Adăugare", "⚡ Feed Alerte & AI"]
+    ["📊 Panou Monitorizare", "📥 Import & Adăugare", "⚖️ Soluții & Analiză AI"]
 )
 
 def incarca_dosare_firma():
@@ -497,7 +497,7 @@ elif meniu == "📥 Import & Adăugare":
                 st.error(f"Eroare procesare fișier: {ex}")
 
 # VEDERE 3: Feed Alerte & AI
-elif meniu == "⚡ Feed Alerte & AI":
+elif meniu == "⚖️ Soluții & Analiză AI":
     st.markdown("""
         <div class="exec-header">
             <div>
