@@ -493,7 +493,20 @@ elif meniu == "⚡ Feed Alerte & AI":
     df_alerte = incarca_alerte_firma()
     
     if not df_alerte.empty:
-        for idx, row in df_alerte.iterrows():
+        # --- SELECTOR DINAMIC DOSARE PENTRU AI ---
+        conn_sel = baza_date.conectare()
+        c_sel = conn_sel.cursor()
+        c_sel.execute('SELECT numar_dosar, nume_client FROM dosare WHERE companie_id = ?', (companie_id,))
+        dosare_disponibile = c_sel.fetchall()
+        conn_sel.close()
+        if dosare_disponibile:
+            map_nume = {f'{nr} - {cl}': nr for nr, cl in dosare_disponibile}
+            ales_key = st.selectbox('📌 Selectează Dosarul pentru Analiză AI & Strategie:', list(map_nume.keys()))
+            nr_ales = map_nume[ales_key]
+            df_alerte_lucru = df_alerte[df_alerte['numar_dosar'] == nr_ales] if ('numar_dosar' in df_alerte.columns and not df_alerte[df_alerte['numar_dosar'] == nr_ales].empty) else df_alerte
+        else:
+            df_alerte_lucru = df_alerte
+        for idx, row in df_alerte_lucru.iterrows():
             noul_t = row['noul_termen'] if row['noul_termen'] and str(row['noul_termen']).lower() != "null" else "Fără termen stabilit"
             
             st.markdown(f"""

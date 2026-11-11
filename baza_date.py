@@ -146,3 +146,12 @@ def salveaza_alerta(companie_id, numar_dosar, tip_solutie, noul_termen, sarcini,
 
 if __name__ == "__main__":
     init_db()
+
+def sterge_dosar(companie_id, numar_dosar):
+    conn = conectare()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM alerte WHERE companie_id = ? AND numar_dosar = ?", (companie_id, numar_dosar))
+    cursor.execute("DELETE FROM dosare WHERE companie_id = ? AND numar_dosar = ?", (companie_id, numar_dosar))
+    conn.commit()
+    conn.close()
+    return True
