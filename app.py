@@ -46,7 +46,7 @@ Răspunde STRICT cu un obiect JSON valid, fără introduceri sau explicații în
 """
     try:
         raspuns = client_ai.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-5-5",
             max_tokens=800,
             messages=[{"role": "user", "content": prompt}]
         )

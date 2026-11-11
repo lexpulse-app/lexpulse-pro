@@ -74,7 +74,7 @@ Te rog să generezi un răspuns clar structurat exact după următoarele puncte:
 """
 
     raspuns = client_ai.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-haiku-5-5",
         max_tokens=1000,
         messages=[{"role": "user", "content": prompt}]
     )
