@@ -66,6 +66,12 @@ class _ConnWrapper:
 
 def _get_db_url():
     url = os.getenv("DATABASE_URL", "").strip()
+    if not url:
+        try:
+            import streamlit as st
+            url = str(st.secrets.get("DATABASE_URL", "")).strip()
+        except Exception:
+            pass
     if url.startswith("Postgresql://"):
         url = "postgresql://" + url[len("Postgresql://"):]
     return url

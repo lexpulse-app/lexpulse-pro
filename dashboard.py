@@ -1,7 +1,7 @@
 
 import os
 import streamlit as st
-for k in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]:
+for k in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DATABASE_URL"]:
     if k in st.secrets and not os.environ.get(k):
         os.environ[k] = str(st.secrets[k])
 
