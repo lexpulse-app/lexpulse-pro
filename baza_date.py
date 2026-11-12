@@ -155,6 +155,34 @@ def init_db():
     )
     """)
 
+
+    # Migrare automata coloane SaaS (multi-tenant + abonamente)
+    coloane_noi = [
+        ("telegram_chat_id", "TEXT DEFAULT ''"),
+        ("plan", "TEXT DEFAULT 'trial'"),
+        ("limita_dosare", "INTEGER DEFAULT 2"),
+        ("status_abonament", "TEXT DEFAULT 'active'"),
+        ("stripe_customer_id", "TEXT DEFAULT ''"),
+        ("data_expirare", "TEXT DEFAULT ''")
+    ]
+    for col_nume, col_def in coloane_noi:
+        try:
+            if is_pg:
+                cursor.execute(f"ALTER TABLE companii ADD COLUMN IF NOT EXISTS {col_nume} {col_def}")
+            else:
+                cursor.execute(f"ALTER TABLE companii ADD COLUMN {col_nume} {col_def}")
+        except Exception:
+            pass
+
+    # Contul fondatorului are acces nelimitat
+    try:
+        cursor.execute(
+            "UPDATE companii SET plan = 'enterprise', limita_dosare = 9999, status_abonament = 'active' WHERE email_admin = ?",
+            ("davidpascu.av@gmail.com",)
+        )
+    except Exception:
+        pass
+
     conn.commit()
     conn.close()
 
@@ -258,6 +286,67 @@ def sterge_dosar(companie_id, numar_dosar):
     conn.commit()
     conn.close()
     return True
+
+
+
+
+def obtine_detalii_companie(companie_id):
+    conn = conectare()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, nume_firma, email_admin, COALESCE(telegram_chat_id, ''), 
+               COALESCE(plan, 'trial'), COALESCE(limita_dosare, 2), 
+               COALESCE(status_abonament, 'active'), COALESCE(data_expirare, '')
+        FROM companii WHERE id = ?
+    """, (companie_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "nume_firma": row[1],
+        "email": row[2],
+        "telegram_chat_id": row[3],
+        "plan": row[4],
+        "limita_dosare": int(row[5] or 2),
+        "status_abonament": row[6],
+        "data_expirare": row[7]
+    }
+
+
+def actualizeaza_telegram_companie(companie_id, chat_id):
+    conn = conectare()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE companii SET telegram_chat_id = ? WHERE id = ?", (str(chat_id).strip(), companie_id))
+    conn.commit()
+    conn.close()
+
+
+def activeaza_plan_companie(companie_id, plan, limita_dosare, stripe_customer_id="", data_expirare=""):
+    conn = conectare()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE companii 
+        SET plan = ?, limita_dosare = ?, status_abonament = 'active', 
+            stripe_customer_id = ?, data_expirare = ?
+        WHERE id = ?
+    """, (plan, limita_dosare, stripe_customer_id, data_expirare, companie_id))
+    conn.commit()
+    conn.close()
+
+
+def verifica_limita_dosare(companie_id):
+    info = obtine_detalii_companie(companie_id)
+    if not info:
+        return False, 0, 0
+    conn = conectare()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM dosare WHERE activ = 1 AND companie_id = ?", (companie_id,))
+    nr_curent = cursor.fetchone()[0]
+    conn.close()
+    limita = info["limita_dosare"]
+    return nr_curent < limita, nr_curent, limita
 
 
 if __name__ == "__main__":

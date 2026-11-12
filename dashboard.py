@@ -1,7 +1,9 @@
 
 import os
 import streamlit as st
-for k in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DATABASE_URL"]:
+from datetime import datetime, timedelta
+import stripe
+for k in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DATABASE_URL", "STRIPE_SECRET_KEY"]:
     if k in st.secrets and not os.environ.get(k):
         os.environ[k] = str(st.secrets[k])
 
@@ -29,34 +31,10 @@ def _init_db_once():
 
 _init_db_once()
 
-FISIER_SESIUNE = ".sesiune_activa.json"
-
-def citeste_sesiune_locala():
-    if os.path.exists(FISIER_SESIUNE):
-        try:
-            with open(FISIER_SESIUNE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return None
-    return None
-
-def salveaza_sesiune_locala(user_dict):
-    with open(FISIER_SESIUNE, "w") as f:
-        json.dump(user_dict, f)
-
-def sterge_sesiune_locala():
-    if os.path.exists(FISIER_SESIUNE):
-        os.remove(FISIER_SESIUNE)
-
-if "utilizator" not in st.session_state or st.session_state.utilizator is None:
-    sesiune_salvata = citeste_sesiune_locala()
-    if sesiune_salvata:
-        st.session_state.utilizator = sesiune_salvata
-    else:
-        st.session_state.utilizator = None
+if "utilizator" not in st.session_state:
+    st.session_state.utilizator = None
 
 def deconectare():
-    sterge_sesiune_locala()
     st.session_state.utilizator = None
     st.rerun()
 
@@ -276,15 +254,12 @@ if not st.session_state.utilizator:
             with st.form("form_login"):
                 email_login = st.text_input("Email profesional", placeholder="avocat@societate.ro")
                 parola_login = st.text_input("Parolă securizată", type="password")
-                tine_minte = st.checkbox("Păstrează sesiunea activă pe acest terminal", value=True)
                 btn_login = st.form_submit_button("Autentificare în Portal", use_container_width=True)
 
                 if btn_login:
                     user = baza_date.autentifica_utilizator(email_login, parola_login)
                     if user:
                         st.session_state.utilizator = user
-                        if tine_minte:
-                            salveaza_sesiune_locala(user)
                         st.success("Autentificare reușită!")
                         st.rerun()
                     else:
@@ -294,12 +269,17 @@ if not st.session_state.utilizator:
             with st.form("form_register"):
                 firma_noua = st.text_input("Denumire Societate / Cabinet Avocat", placeholder="ex: Popovici & Asociații SCA")
                 email_nou = st.text_input("Email administrator", placeholder="contact@societate.ro")
-                parola_noua = st.text_input("Parolă cont", type="password")
-                btn_reg = st.form_submit_button("Creează Cont Societate", use_container_width=True)
+                parola_noua = st.text_input("Parolă cont (minim 8 caractere)", type="password")
+                acord_gdpr = st.checkbox("Accept Termenii de Utilizare și Politica de Confidențialitate (GDPR)")
+                btn_reg = st.form_submit_button("Creează Cont Societate (Trial Gratuit)", use_container_width=True)
 
                 if btn_reg:
                     if not (firma_noua and email_nou and parola_noua):
                         st.error("Toate câmpurile sunt obligatorii.")
+                    elif len(parola_noua) < 8:
+                        st.error("Parola trebuie să conțină minim 8 caractere.")
+                    elif not acord_gdpr:
+                        st.error("Trebuie să accepți Termenii și Politica GDPR pentru a crea contul.")
                     else:
                         succes, msg = baza_date.inregistreaza_companie(firma_noua, email_nou, parola_noua)
                         if succes:
@@ -324,9 +304,46 @@ if st.sidebar.button("Deconectare Securizată 🚪", use_container_width=True):
     deconectare()
 
 st.sidebar.write("---")
+detalii_comp = baza_date.obtine_detalii_companie(companie_id) or {
+    "plan": "trial", "limita_dosare": 2, "telegram_chat_id": "", "status_abonament": "active", "data_expirare": ""
+}
+
+# Procesare automata revenire din Stripe Checkout (?stripe_session=...)
+stripe_key = os.getenv("STRIPE_SECRET_KEY", "").strip()
+if stripe_key:
+    stripe.api_key = stripe_key
+    q_params = st.query_params
+    if "stripe_session" in q_params:
+        sess_id = q_params["stripe_session"]
+        try:
+            sess = stripe.checkout.Session.retrieve(sess_id)
+            if sess.payment_status == "paid":
+                meta = sess.metadata or {}
+                plan_ales = meta.get("plan", "starter")
+                limita_noua = int(meta.get("limita", 30))
+                exp_str = (datetime.now() + timedelta(days=30)).strftime("%d.%m.%Y")
+                baza_date.activeaza_plan_companie(
+                    companie_id, plan_ales, limita_noua,
+                    stripe_customer_id=str(sess.customer or ""),
+                    data_expirare=exp_str
+                )
+                st.query_params.clear()
+                st.success(f"Plata a fost confirmată! Planul {plan_ales.upper()} este activ până la {exp_str}.")
+                detalii_comp = baza_date.obtine_detalii_companie(companie_id)
+        except Exception as se:
+            st.warning(f"Verificare plată în curs: {se}")
+
+st.sidebar.markdown(
+    f"<div style='background:#1E293B;padding:10px 12px;border-radius:8px;margin-bottom:12px;font-size:12px;'>"
+    f"Plan activ: <strong style='color:#38BDF8;'>{detalii_comp['plan'].upper()}</strong><br/>"
+    f"Limită portofoliu: <strong>{detalii_comp['limita_dosare']} dosare</strong>"
+    f"</div>",
+    unsafe_allow_html=True
+)
+
 meniu = st.sidebar.radio(
     "Navigare",
-    ["📊 Panou Monitorizare", "📥 Import & Adăugare", "⚖️ Soluții & Analiză AI"]
+    ["📊 Panou Monitorizare", "📥 Import & Adăugare", "⚖️ Soluții & Analiză AI", "💳 Setări & Abonament"]
 )
 
 def _query_df(sql, params=()):
@@ -473,8 +490,11 @@ elif meniu == "📥 Import & Adăugare":
             
             salveaza = st.form_submit_button("Înregistrează Cauza în Supraveghere")
             if salveaza:
+                permis, nr_crt, lim_max = baza_date.verifica_limita_dosare(companie_id)
                 if not nr.strip():
                     st.error("Introduceți numărul dosarului!")
+                elif not permis:
+                    st.error(f"Ai atins limita planului curent ({nr_crt}/{lim_max} dosare). Accesează '💳 Setări & Abonament' pentru upgrade.")
                 else:
                     rez_add = baza_date.adauga_dosar(companie_id, nr, cl, ct)
                     ok_add, msg_add = rez_add if isinstance(rez_add, tuple) else (rez_add, "Operațiune finalizată.")
@@ -498,7 +518,12 @@ elif meniu == "📥 Import & Adăugare":
                 
                 if st.button("Inițiază Importul Masiv"):
                     count = 0
+                    oprit_limita = False
                     for _, row in df_up.iterrows():
+                        permis, _, _ = baza_date.verifica_limita_dosare(companie_id)
+                        if not permis:
+                            oprit_limita = True
+                            break
                         numar_val = str(row[col_dos]).strip()
                         nume_val = str(row[col_nume]).strip() if col_nume != "-- Fără --" else ""
                         tel_val = str(row[col_tel]).strip() if col_tel != "-- Fără --" else ""
@@ -508,6 +533,8 @@ elif meniu == "📥 Import & Adăugare":
                             if ok_imp:
                                 count += 1
                     st.success(f"Au fost importate cu succes {count} dosare!")
+                    if oprit_limita:
+                        st.warning("Import oprit la atingerea limitei de dosare a planului. Fă upgrade din '💳 Setări & Abonament'.")
             except Exception as ex:
                 st.error(f"Eroare procesare fișier: {ex}")
 
@@ -636,3 +663,136 @@ elif meniu == "⚖️ Soluții & Analiză AI":
             st.write("")
     else:
         st.info("Nu există alerte generate pentru această firmă până acum.")
+
+# VEDERE 4: Setări & Abonament
+elif meniu == "💳 Setări & Abonament":
+    st.markdown("""
+        <div class="exec-header">
+            <div>
+                <h1>Configurare Notificări & Abonament SaaS</h1>
+                <p>Conectare alertare individuală Telegram și administrare plan comercial</p>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    col_tg, col_plan = st.columns([1, 1.3])
+
+    with col_tg:
+        st.subheader("📲 Alertare Telegram Cabinet")
+        st.caption("Fiecare cabinet primește notificările exclusiv pe propriul cont Telegram.")
+        with st.form("form_tg_settings"):
+            tg_val = st.text_input(
+                "Telegram Chat ID",
+                value=detalii_comp.get("telegram_chat_id", ""),
+                placeholder="ex: 8359525029",
+                help="Deschide @userinfobot pe Telegram și apasă Start pentru a afla Chat ID-ul tău."
+            )
+            c_save_tg, c_test_tg = st.columns(2)
+            with c_save_tg:
+                save_tg = st.form_submit_button("Salvează ID", use_container_width=True)
+            with c_test_tg:
+                test_tg = st.form_submit_button("Trimite Test", use_container_width=True)
+
+            if save_tg or test_tg:
+                baza_date.actualizeaza_telegram_companie(companie_id, tg_val)
+                st.success("Telegram Chat ID salvat pentru acest cabinet!")
+                if test_tg and tg_val.strip():
+                    import notificari
+                    ok_t = notificari.trimite_notificare_telegram(
+                        "TEST/2026", "Client Test", "Portal LexPulse Pro",
+                        {
+                            "tip_solutie": "Conexiune activă",
+                            "noul_termen": "Configurat cu succes",
+                            "cale_atac": "N/A",
+                            "sarcini_avocat": "Vei primi aici toate minutele și termenele noi.",
+                            "mesaj_client": "Alertare activată pentru cabinetul dumneavoastră."
+                        },
+                        chat_id_destinatar=tg_val.strip()
+                    )
+                    if ok_t:
+                        st.info("Mesaj de test trimis! Verifică telefonul.")
+                    else:
+                        st.error("Nu s-a putut trimite. Pornește mai întâi o conversație (/start) cu botul LexPulse pe Telegram.")
+
+    with col_plan:
+        st.subheader("💎 Planuri & Facturare")
+        st.write(f"**Plan curent:** `{detalii_comp['plan'].upper()}` | **Limită:** `{detalii_comp['limita_dosare']} dosare`")
+        if detalii_comp.get("data_expirare"):
+            st.write(f"**Valabil până la:** {detalii_comp['data_expirare']}")
+
+        app_url = "https://lexpulse-pro.streamlit.app"
+
+        c_p1, c_p2 = st.columns(2)
+        with c_p1:
+            st.markdown("""
+                <div class="metric-card">
+                    <div class="metric-title">CABINET STARTER</div>
+                    <div class="metric-value">149 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
+                    <p style="font-size:13px;color:#475569;margin-top:8px;">
+                        • Până la <strong>30 dosare</strong> active<br/>
+                        • Verificare automată zilnică<br/>
+                        • Analiză AI + Telegram + Calendar
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+            if st.button("Activează Starter (149 RON)", use_container_width=True):
+                if not stripe_key:
+                    st.warning("Configurează STRIPE_SECRET_KEY în Secrets pentru a activa plățile live.")
+                else:
+                    try:
+                        session = stripe.checkout.Session.create(
+                            payment_method_types=["card"],
+                            line_items=[{
+                                "price_data": {
+                                    "currency": "ron",
+                                    "product_data": {"name": "LexPulse Pro — Plan Cabinet Starter (30 dosare)"},
+                                    "unit_amount": 14900,
+                                },
+                                "quantity": 1,
+                            }],
+                            mode="payment",
+                            customer_email=user["email"],
+                            metadata={"companie_id": str(companie_id), "plan": "starter", "limita": "30"},
+                            success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
+                            cancel_url=app_url,
+                        )
+                        st.link_button("💳 Mergi la Plata Securizată Stripe", session.url, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Eroare Stripe: {e}")
+
+        with c_p2:
+            st.markdown("""
+                <div class="metric-card">
+                    <div class="metric-title">SOCIETATE PRO</div>
+                    <div class="metric-value">349 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
+                    <p style="font-size:13px;color:#475569;margin-top:8px;">
+                        • Până la <strong>150 dosare</strong> active<br/>
+                        • Verificare automată 3x/zi<br/>
+                        • Rapoarte PDF + Export registru
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+            if st.button("Activează Pro (349 RON)", use_container_width=True):
+                if not stripe_key:
+                    st.warning("Configurează STRIPE_SECRET_KEY în Secrets pentru a activa plățile live.")
+                else:
+                    try:
+                        session = stripe.checkout.Session.create(
+                            payment_method_types=["card"],
+                            line_items=[{
+                                "price_data": {
+                                    "currency": "ron",
+                                    "product_data": {"name": "LexPulse Pro — Plan Societate Pro (150 dosare)"},
+                                    "unit_amount": 34900,
+                                },
+                                "quantity": 1,
+                            }],
+                            mode="payment",
+                            customer_email=user["email"],
+                            metadata={"companie_id": str(companie_id), "plan": "pro", "limita": "150"},
+                            success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
+                            cancel_url=app_url,
+                        )
+                        st.link_button("💳 Mergi la Plata Securizată Stripe", session.url, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Eroare Stripe: {e}")

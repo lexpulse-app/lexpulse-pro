@@ -1,0 +1,32 @@
+name: Sincronizare Automata Portal Just
+
+on:
+  schedule:
+    # Ruleaza de luni pana vineri la 06:30, 11:00 si 15:30 UTC (09:30, 14:00, 18:30 ora Romaniei)
+    - cron: '30 6 * * 1-5'
+    - cron: '0 11 * * 1-5'
+    - cron: '30 15 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  sync-dosare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cod
+        uses: actions/checkout@v4
+
+      - name: Configurare Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalare dependente
+        run: pip install -r requirements.txt
+
+      - name: Rulare sincronizare Portal Just -> Claude -> Telegram
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python3 -c "import baza_date, app; baza_date.init_db(); nr = app.sincronizeaza_toate_dosarele(); print(f'Sincronizare automata finalizata. Actualizari: {nr}')"
