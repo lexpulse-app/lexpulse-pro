@@ -382,8 +382,6 @@ if not st.session_state.utilizator:
                 email_login = st.text_input("Email profesional", placeholder="avocat@societate.ro")
                 parola_login = st.text_input("Parolă securizată", type="password")
                 remember_me = st.checkbox("Ține-mă minte (30 zile)", value=True)
-                remember_me = st.checkbox("Ține-mă minte (30 zile)", value=True)
-                remember_me = st.checkbox("Ține-mă minte (30 zile)", value=True)
                 btn_login = st.form_submit_button("Autentificare în Portal", use_container_width=True)
 
                 if btn_login:
