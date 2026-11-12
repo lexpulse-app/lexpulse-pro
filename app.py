@@ -109,26 +109,53 @@ def sincronizeaza_toate_dosarele(companie_id=None):
             baza_date.actualizeaza_dosar(numar, comp_id, inst_str, obiect_str, stadiu_str, "", ultima_minuta_db or "Fără ședințe publicate")
             continue
             
-        sedinte = info.sedinte.DosarSedinta
-        ultima_sed = sedinte[-1]
-        termen_portal = None
-        minuta_curenta = getattr(ultima_sed, "solutieSumar", None)
+        from datetime import datetime, date
+        sedinte = list(info.sedinte.DosarSedinta)
+        # Sortam cronologic dupa data sedintei (Portal Just le returneaza uneori invers)
+        sedinte.sort(key=lambda s: str(getattr(s, "data", "") or ""))
 
-        # Daca ultima sedinta din Portal Just nu are inca solutie (e termenul viitor stabilit), luam data ei ca termen si minuta de la sedinta anterioara
-        if not minuta_curenta and len(sedinte) >= 2:
-            data_viitoare = getattr(ultima_sed, "data", None)
-            if data_viitoare:
-                termen_portal = data_viitoare.strftime("%d.%m.%Y") if hasattr(data_viitoare, "strftime") else str(data_viitoare)[:10]
-            sed_anterioara = sedinte[-2]
-            minuta_curenta = getattr(sed_anterioara, "solutieSumar", None) or "Amânare judecată (termen nou fixat pe portal)"
-            data_sedinta = str(getattr(sed_anterioara, "data", ""))
+        azi = date.today()
+        termen_portal = None
+        sedinte_viitoare = []
+        sedinte_cu_minuta = []
+
+        for s in sedinte:
+            d_raw = getattr(s, "data", None)
+            sumar = (getattr(s, "solutieSumar", None) or "").strip()
+            sol = (getattr(s, "solutie", None) or "").strip()
+            text_s = sumar or sol
+
+            d_obj = None
+            if hasattr(d_raw, "date"):
+                d_obj = d_raw.date()
+            elif isinstance(d_raw, date):
+                d_obj = d_raw
+            elif d_raw:
+                try:
+                    d_obj = datetime.fromisoformat(str(d_raw)[:10]).date()
+                except Exception:
+                    pass
+
+            if d_obj and d_obj > azi:
+                sedinte_viitoare.append((d_obj, text_s))
+            if text_s:
+                sedinte_cu_minuta.append((d_obj, text_s, str(d_raw or "")))
+
+        if sedinte_viitoare:
+            # Cel mai apropiat termen viitor stabilit in Portal Just
+            sedinte_viitoare.sort(key=lambda x: x[0])
+            termen_portal = sedinte_viitoare[0][0].strftime("%d.%m.%Y")
+
+        if sedinte_cu_minuta:
+            _, minuta_curenta, data_sedinta = sedinte_cu_minuta[-1]
         else:
-            minuta_curenta = minuta_curenta or "Fără soluție publicată"
-            data_sedinta = str(getattr(ultima_sed, "data", ""))
+            ultima_sed = sedinte[-1]
+            minuta_curenta = "Termen stabilit pe portal (fără soluție pronunțată încă)"
+            data_sedinta = str(getattr(ultima_sed, "data", "") or "")
 
         text_pentru_ai = minuta_curenta
         if termen_portal:
-            text_pentru_ai += f" | Noul termen de judecată înregistrat pe Portal Just: {termen_portal}"
+            text_pentru_ai += f" | Noul termen de judecată stabilit pe Portal Just: {termen_portal}"
 
         # Salvam mereu metadatele din Portal Just (pastrand ultima_minuta_db pana reuseste AI-ul)
         baza_date.actualizeaza_dosar(numar, comp_id, inst_str, obiect_str, stadiu_str, data_sedinta, ultima_minuta_db)
