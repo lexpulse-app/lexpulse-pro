@@ -163,6 +163,7 @@ def init_db():
         ("limita_dosare", "INTEGER DEFAULT 2"),
         ("status_abonament", "TEXT DEFAULT 'active'"),
         ("stripe_customer_id", "TEXT DEFAULT ''"),
+        ("stripe_subscription_id", "TEXT DEFAULT ''"),
         ("data_expirare", "TEXT DEFAULT ''")
     ]
     for col_nume, col_def in coloane_noi:
@@ -323,15 +324,15 @@ def actualizeaza_telegram_companie(companie_id, chat_id):
     conn.close()
 
 
-def activeaza_plan_companie(companie_id, plan, limita_dosare, stripe_customer_id="", data_expirare=""):
+def activeaza_plan_companie(companie_id, plan, limita_dosare, stripe_customer_id="", data_expirare="", stripe_subscription_id=""):
     conn = conectare()
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE companii 
         SET plan = ?, limita_dosare = ?, status_abonament = 'active', 
-            stripe_customer_id = ?, data_expirare = ?
+            stripe_customer_id = ?, stripe_subscription_id = ?, data_expirare = ?
         WHERE id = ?
-    """, (plan, limita_dosare, stripe_customer_id, data_expirare, companie_id))
+    """, (plan, limita_dosare, stripe_customer_id, stripe_subscription_id, data_expirare, companie_id))
     conn.commit()
     conn.close()
 

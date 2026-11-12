@@ -325,7 +325,8 @@ if stripe_key:
                 baza_date.activeaza_plan_companie(
                     companie_id, plan_ales, limita_noua,
                     stripe_customer_id=str(sess.customer or ""),
-                    data_expirare=exp_str
+                    data_expirare=exp_str,
+                    stripe_subscription_id=str(sess.subscription or "")
                 )
                 st.query_params.clear()
                 st.success(f"Plata a fost confirmată! Planul {plan_ales.upper()} este activ până la {exp_str}.")
@@ -747,10 +748,11 @@ elif meniu == "💳 Setări & Abonament":
                                     "currency": "ron",
                                     "product_data": {"name": "LexPulse Pro — Plan Cabinet Starter (30 dosare)"},
                                     "unit_amount": 14900,
+                                    "recurring": {"interval": "month"},
                                 },
                                 "quantity": 1,
                             }],
-                            mode="payment",
+                            mode="subscription",
                             customer_email=user["email"],
                             metadata={"companie_id": str(companie_id), "plan": "starter", "limita": "30"},
                             success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
@@ -784,10 +786,11 @@ elif meniu == "💳 Setări & Abonament":
                                     "currency": "ron",
                                     "product_data": {"name": "LexPulse Pro — Plan Societate Pro (150 dosare)"},
                                     "unit_amount": 34900,
+                                    "recurring": {"interval": "month"},
                                 },
                                 "quantity": 1,
                             }],
-                            mode="payment",
+                            mode="subscription",
                             customer_email=user["email"],
                             metadata={"companie_id": str(companie_id), "plan": "pro", "limita": "150"},
                             success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
