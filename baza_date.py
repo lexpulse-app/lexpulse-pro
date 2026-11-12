@@ -352,3 +352,19 @@ def verifica_limita_dosare(companie_id):
 
 if __name__ == "__main__":
     init_db()
+
+
+def obtine_utilizator_dupa_email(email: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT u.id, u.email, u.nume_complet, u.companie_id, comp.nume_cabinet
+        FROM utilizatori u
+        JOIN companii comp ON u.companie_id = comp.id
+        WHERE LOWER(u.email) = LOWER(?)
+    """, (email.strip(),))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {"id": row[0], "email": row[1], "nume_complet": row[2], "companie_id": row[3], "nume_cabinet": row[4]}

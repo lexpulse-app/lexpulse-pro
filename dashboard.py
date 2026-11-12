@@ -1,6 +1,29 @@
 
 import os
 import streamlit as st
+import hmac, hashlib, base64, time as _time_mod
+
+def _gen_session_token(email: str) -> str:
+    secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
+    exp = int(_time_mod.time()) + 30 * 86400
+    payload = f"{email}|{exp}".encode()
+    sig = hmac.new(secret, payload, hashlib.sha256).hexdigest()[:24]
+    return base64.urlsafe_b64encode(f"{email}|{exp}|{sig}".encode()).decode()
+
+def _verify_session_token(token: str):
+    try:
+        raw = base64.urlsafe_b64decode(token.encode()).decode()
+        email, exp_s, sig = raw.split("|")
+        if int(exp_s) < int(_time_mod.time()):
+            return None
+        secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
+        expected = hmac.new(secret, f"{email}|{exp_s}".encode(), hashlib.sha256).hexdigest()[:24]
+        if hmac.compare_digest(sig, expected):
+            return email
+    except Exception:
+        pass
+    return None
+
 from datetime import datetime, timedelta
 import stripe
 for k in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DATABASE_URL", "STRIPE_SECRET_KEY"]:
@@ -254,6 +277,7 @@ if not st.session_state.utilizator:
             with st.form("form_login"):
                 email_login = st.text_input("Email profesional", placeholder="avocat@societate.ro")
                 parola_login = st.text_input("Parolă securizată", type="password")
+                remember_me = st.checkbox("Ține-mă minte (30 zile)", value=True)
                 btn_login = st.form_submit_button("Autentificare în Portal", use_container_width=True)
 
                 if btn_login:
