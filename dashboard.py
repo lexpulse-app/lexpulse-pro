@@ -401,8 +401,12 @@ if meniu == "📊 Panou Monitorizare":
         if st.button("🚀 Declanșează Sincronizare Acum", use_container_width=True):
             with st.spinner("Se interoghează baza centralizată Portal Just..."):
                 nr_gasite = app.sincronizeaza_toate_dosarele(companie_id)
-            st.success(f"Sincronizare finalizată! ({nr_gasite} actualizări recepționate)")
-            st.rerun()
+            if getattr(app, "ULTIMELE_ERORI", None):
+                for er in app.ULTIMELE_ERORI:
+                    st.error(er)
+            else:
+                st.success(f"Sincronizare finalizată! ({nr_gasite} actualizări recepționate)")
+                st.rerun()
 
     st.write("")
     if not df.empty:

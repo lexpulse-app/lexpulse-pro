@@ -82,9 +82,13 @@ Răspunde STRICT cu un obiect JSON valid, fără introduceri sau explicații în
         return json.loads(raw)
     except Exception as e:
         print(f"Eroare la procesarea AI: {e}")
-        return None
+        return {"_eroare": str(e)}
+
+ULTIMELE_ERORI = []
 
 def sincronizeaza_toate_dosarele(companie_id=None):
+    global ULTIMELE_ERORI
+    ULTIMELE_ERORI = []
     dosare = baza_date.obtine_dosare_active(companie_id)
     if not dosare:
         return 0
@@ -93,16 +97,28 @@ def sincronizeaza_toate_dosarele(companie_id=None):
     for item in dosare:
         id_db, numar, client, contact, ultima_minuta_db, comp_id = item
         info = obtine_date_portal(numar)
-        if not info or not (info.sedinte and info.sedinte.DosarSedinta):
+        if not info:
+            ULTIMELE_ERORI.append(f"{numar}: Portal Just nu a returnat date (verifică formatul sau conexiunea WSDL).")
+            continue
+
+        inst_str = str(getattr(info, "institutie", "") or "")
+        obiect_str = str(getattr(info, "obiect", "") or "")
+        stadiu_str = str(getattr(info, "stadiuProcesualNume", "") or "")
+
+        if not (getattr(info, "sedinte", None) and getattr(info.sedinte, "DosarSedinta", None)):
+            baza_date.actualizeaza_dosar(numar, comp_id, inst_str, obiect_str, stadiu_str, "", ultima_minuta_db or "Fără ședințe publicate")
             continue
             
         sedinta = info.sedinte.DosarSedinta[-1]
         minuta_curenta = sedinta.solutieSumar or "Fără soluție publicată"
         data_sedinta = str(sedinta.data)
 
+        # Salvam mereu metadatele din Portal Just (pastrand ultima_minuta_db pana reuseste AI-ul)
+        baza_date.actualizeaza_dosar(numar, comp_id, inst_str, obiect_str, stadiu_str, data_sedinta, ultima_minuta_db)
+
         if minuta_curenta != ultima_minuta_db:
-            analiza = analizeaza_cu_claude(numar, info.institutie, info.obiect, info.stadiuProcesualNume, minuta_curenta)
-            if analiza:
+            analiza = analizeaza_cu_claude(numar, inst_str, obiect_str, stadiu_str, minuta_curenta)
+            if analiza and "_eroare" not in analiza:
                 baza_date.salveaza_alerta(
                     comp_id,
                     numar,
@@ -113,13 +129,17 @@ def sincronizeaza_toate_dosarele(companie_id=None):
                 )
                 
                 termen = analiza.get("noul_termen")
-                if termen and termen.lower() != "null":
-                    calendar_sync.creeaza_eveniment_ics(numar, info.institutie, termen)
+                if termen and str(termen).lower() != "null":
+                    calendar_sync.creeaza_eveniment_ics(numar, inst_str, termen)
 
                 try:
-                    notificari.trimite_notificare_telegram(numar, client, info.institutie, analiza)
+                    notificari.trimite_notificare_telegram(numar, client, inst_str, analiza)
                 except Exception as te:
-                    print(f"Eroare Telegram: {te}")
-                baza_date.actualizeaza_dosar(numar, comp_id, info.institutie, info.obiect, info.stadiuProcesualNume, data_sedinta, minuta_curenta)
+                    ULTIMELE_ERORI.append(f"{numar} (Telegram): {te}")
+
+                baza_date.actualizeaza_dosar(numar, comp_id, inst_str, obiect_str, stadiu_str, data_sedinta, minuta_curenta)
                 actualizari += 1
+            else:
+                err_msg = analiza.get("_eroare") if isinstance(analiza, dict) else "Răspuns gol de la Claude"
+                ULTIMELE_ERORI.append(f"{numar} (Claude AI): {err_msg}")
     return actualizari
