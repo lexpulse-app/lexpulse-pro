@@ -37,7 +37,21 @@ def obtine_date_portal(numar_dosar):
         print(f"Eroare conectare Portal Just: {e}")
         return None
 
+def _get_secret(key):
+    val = os.getenv(key, "").strip()
+    if not val:
+        try:
+            import streamlit as st
+            val = str(st.secrets.get(key, "")).strip()
+        except Exception:
+            pass
+    return val
+
 def analizeaza_cu_claude(numar_dosar, institutie, obiect, stadiu, minuta):
+    global client_ai
+    cheie = _get_secret("ANTHROPIC_API_KEY")
+    if cheie and (client_ai is None or getattr(client_ai, "api_key", "") != cheie):
+        client_ai = Anthropic(api_key=cheie)
     prompt = f"""
 Ești un asistent juridic de elită pentru instanțele din România.
 Analizează minuta:
@@ -55,7 +69,7 @@ Răspunde STRICT cu un obiect JSON valid, fără introduceri sau explicații în
 """
     try:
         raspuns = client_ai.messages.create(
-            model="claude-haiku-5-5",
+            model="claude-haiku-4-5-20251001",
             max_tokens=1500,
             thinking={"type": "disabled"},
             messages=[{"role": "user", "content": prompt}]
@@ -102,8 +116,10 @@ def sincronizeaza_toate_dosarele(companie_id=None):
                 if termen and termen.lower() != "null":
                     calendar_sync.creeaza_eveniment_ics(numar, info.institutie, termen)
 
-                notificari.trimite_notificare_telegram(numar, client, info.institutie, analiza)
+                try:
+                    notificari.trimite_notificare_telegram(numar, client, info.institutie, analiza)
+                except Exception as te:
+                    print(f"Eroare Telegram: {te}")
+                baza_date.actualizeaza_dosar(numar, comp_id, info.institutie, info.obiect, info.stadiuProcesualNume, data_sedinta, minuta_curenta)
                 actualizari += 1
-            
-            baza_date.actualizeaza_dosar(numar, comp_id, info.institutie, info.obiect, info.stadiuProcesualNume, data_sedinta, minuta_curenta)
     return actualizari
