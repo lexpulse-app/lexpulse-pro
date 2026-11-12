@@ -21,6 +21,48 @@ def _verify_session_token(token: str):
         if hmac.compare_digest(sig, expected):
             return email
     except Exception:
+        return None
+    return None
+
+if not st.session_state.get("user_email"):
+    _tok = st.query_params.get("session", "")
+    _em = _verify_session_token(_tok) if _tok else None
+    if _em and hasattr(baza_date, "obtine_utilizator_dupa_email"):
+        _usr = baza_date.obtine_utilizator_dupa_email(_em)
+        if _usr:
+            st.session_state["autentificat"] = True
+            st.session_state["logged_in"] = True
+            st.session_state["user_email"] = _usr["email"]
+            st.session_state["user_id"] = _usr["id"]
+            st.session_state["companie_id"] = _usr["companie_id"]
+            st.session_state["nume_utilizator"] = _usr.get("nume_complet", "")
+            st.session_state["nume_cabinet"] = _usr.get("nume_cabinet", "")
+            st.session_state["keep_logged_in"] = True
+
+if st.session_state.get("user_email") and st.session_state.get("keep_logged_in", True):
+    if not st.query_params.get("session"):
+        st.query_params["session"] = _gen_session_token(st.session_state["user_email"])
+
+import hmac, hashlib, base64, time as _time_mod
+
+def _gen_session_token(email: str) -> str:
+    secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
+    exp = int(_time_mod.time()) + 30 * 86400
+    payload = f"{email}|{exp}".encode()
+    sig = hmac.new(secret, payload, hashlib.sha256).hexdigest()[:24]
+    return base64.urlsafe_b64encode(f"{email}|{exp}|{sig}".encode()).decode()
+
+def _verify_session_token(token: str):
+    try:
+        raw = base64.urlsafe_b64decode(token.encode()).decode()
+        email, exp_s, sig = raw.split("|")
+        if int(exp_s) < int(_time_mod.time()):
+            return None
+        secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
+        expected = hmac.new(secret, f"{email}|{exp_s}".encode(), hashlib.sha256).hexdigest()[:24]
+        if hmac.compare_digest(sig, expected):
+            return email
+    except Exception:
         pass
     return None
 
@@ -296,6 +338,7 @@ if not st.session_state.utilizator:
             with st.form("form_login"):
                 email_login = st.text_input("Email profesional", placeholder="avocat@societate.ro")
                 parola_login = st.text_input("Parolă securizată", type="password")
+                remember_me = st.checkbox("Ține-mă minte (30 zile)", value=True)
                 remember_me = st.checkbox("Ține-mă minte (30 zile)", value=True)
                 btn_login = st.form_submit_button("Autentificare în Portal", use_container_width=True)
 
