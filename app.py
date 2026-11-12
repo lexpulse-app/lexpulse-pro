@@ -109,15 +109,35 @@ def sincronizeaza_toate_dosarele(companie_id=None):
             baza_date.actualizeaza_dosar(numar, comp_id, inst_str, obiect_str, stadiu_str, "", ultima_minuta_db or "Fără ședințe publicate")
             continue
             
-        sedinta = info.sedinte.DosarSedinta[-1]
-        minuta_curenta = sedinta.solutieSumar or "Fără soluție publicată"
-        data_sedinta = str(sedinta.data)
+        sedinte = info.sedinte.DosarSedinta
+        ultima_sed = sedinte[-1]
+        termen_portal = None
+        minuta_curenta = getattr(ultima_sed, "solutieSumar", None)
+
+        # Daca ultima sedinta din Portal Just nu are inca solutie (e termenul viitor stabilit), luam data ei ca termen si minuta de la sedinta anterioara
+        if not minuta_curenta and len(sedinte) >= 2:
+            data_viitoare = getattr(ultima_sed, "data", None)
+            if data_viitoare:
+                termen_portal = data_viitoare.strftime("%d.%m.%Y") if hasattr(data_viitoare, "strftime") else str(data_viitoare)[:10]
+            sed_anterioara = sedinte[-2]
+            minuta_curenta = getattr(sed_anterioara, "solutieSumar", None) or "Amânare judecată (termen nou fixat pe portal)"
+            data_sedinta = str(getattr(sed_anterioara, "data", ""))
+        else:
+            minuta_curenta = minuta_curenta or "Fără soluție publicată"
+            data_sedinta = str(getattr(ultima_sed, "data", ""))
+
+        text_pentru_ai = minuta_curenta
+        if termen_portal:
+            text_pentru_ai += f" | Noul termen de judecată înregistrat pe Portal Just: {termen_portal}"
 
         # Salvam mereu metadatele din Portal Just (pastrand ultima_minuta_db pana reuseste AI-ul)
         baza_date.actualizeaza_dosar(numar, comp_id, inst_str, obiect_str, stadiu_str, data_sedinta, ultima_minuta_db)
 
         if minuta_curenta != ultima_minuta_db:
-            analiza = analizeaza_cu_claude(numar, inst_str, obiect_str, stadiu_str, minuta_curenta)
+            analiza = analizeaza_cu_claude(numar, inst_str, obiect_str, stadiu_str, text_pentru_ai)
+            if isinstance(analiza, dict) and "_eroare" not in analiza:
+                if termen_portal and (not analiza.get("noul_termen") or str(analiza.get("noul_termen")).lower() == "null"):
+                    analiza["noul_termen"] = termen_portal
             if analiza and "_eroare" not in analiza:
                 baza_date.salveaza_alerta(
                     comp_id,
