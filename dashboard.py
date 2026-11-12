@@ -24,10 +24,12 @@ def _verify_session_token(token: str):
         return None
     return None
 
-if not st.session_state.get("user_email"):
+_cur_email = st.session_state.get("user_email") or (st.session_state.get("user") or {}).get("email")
+
+if not _cur_email:
     _tok = st.query_params.get("session", "")
     _em = _verify_session_token(_tok) if _tok else None
-    if _em and hasattr(baza_date, "obtine_utilizator_dupa_email"):
+    if _em:
         _usr = baza_date.obtine_utilizator_dupa_email(_em)
         if _usr:
             st.session_state["autentificat"] = True
@@ -37,11 +39,14 @@ if not st.session_state.get("user_email"):
             st.session_state["companie_id"] = _usr["companie_id"]
             st.session_state["nume_utilizator"] = _usr.get("nume_complet", "")
             st.session_state["nume_cabinet"] = _usr.get("nume_cabinet", "")
+            st.session_state["user"] = _usr
             st.session_state["keep_logged_in"] = True
+            _cur_email = _usr["email"]
 
-if st.session_state.get("user_email") and st.session_state.get("keep_logged_in", True):
-    if not st.query_params.get("session"):
-        st.query_params["session"] = _gen_session_token(st.session_state["user_email"])
+if _cur_email and st.session_state.get("keep_logged_in", True):
+    _expected_tok = _gen_session_token(_cur_email)
+    if st.query_params.get("session") != _expected_tok:
+        st.query_params["session"] = _expected_tok
 
 import hmac, hashlib, base64, time as _time_mod
 
@@ -381,7 +386,7 @@ if not st.session_state.utilizator:
             with st.form("form_login"):
                 email_login = st.text_input("Email profesional", placeholder="avocat@societate.ro")
                 parola_login = st.text_input("Parolă securizată", type="password")
-                remember_me = st.checkbox("Ține-mă minte (30 zile)", value=True)
+                remember_me = st.checkbox("Ține-mă minte (30 zile)", value=True, key="chk_remember_me")
                 btn_login = st.form_submit_button("Autentificare în Portal", use_container_width=True)
 
                 if btn_login:
