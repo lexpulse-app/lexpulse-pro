@@ -472,10 +472,12 @@ elif meniu == "📥 Import & Adăugare":
                 if not nr.strip():
                     st.error("Introduceți numărul dosarului!")
                 else:
-                    if baza_date.adauga_dosar(companie_id, nr, cl, ct):
-                        st.success(f"Dosarul {nr} a fost introdus cu succes!")
+                    rez_add = baza_date.adauga_dosar(companie_id, nr, cl, ct)
+                    ok_add, msg_add = rez_add if isinstance(rez_add, tuple) else (rez_add, "Operațiune finalizată.")
+                    if ok_add:
+                        st.success(msg_add)
                     else:
-                        st.warning("Dosarul există deja în monitorizarea cabinetului.")
+                        st.warning(msg_add)
 
     with tab2:
         st.write("Încărcați un registru electronic existent (`.xlsx` sau `.csv`):")
@@ -497,7 +499,9 @@ elif meniu == "📥 Import & Adăugare":
                         nume_val = str(row[col_nume]).strip() if col_nume != "-- Fără --" else ""
                         tel_val = str(row[col_tel]).strip() if col_tel != "-- Fără --" else ""
                         if numar_val and numar_val.lower() != "nan":
-                            if baza_date.adauga_dosar(companie_id, numar_val, nume_val, tel_val):
+                            rez_imp = baza_date.adauga_dosar(companie_id, numar_val, nume_val, tel_val)
+                            ok_imp = rez_imp[0] if isinstance(rez_imp, tuple) else rez_imp
+                            if ok_imp:
                                 count += 1
                     st.success(f"Au fost importate cu succes {count} dosare!")
             except Exception as ex:

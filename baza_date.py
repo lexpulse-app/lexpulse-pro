@@ -197,9 +197,14 @@ def adauga_dosar(companie_id, numar_dosar, nume_client="", contact_client=""):
         VALUES (?, ?, ?, ?)
         """, (companie_id, numar_dosar.strip(), nume_client.strip(), contact_client.strip()))
         conn.commit()
-        return True
-    except INTEGRITY_ERRORS:
-        return False
+        return True, "Dosarul a fost introdus cu succes!"
+    except INTEGRITY_ERRORS as e:
+        err = str(e).lower()
+        if "foreign key" in err:
+            return False, "Sesiune expirată (compania nu există în baza cloud). Apasă Deconectare și autentifică-te din nou!"
+        return False, "Dosarul există deja în monitorizarea cabinetului."
+    except Exception as e:
+        return False, f"Eroare bază de date: {e}"
     finally:
         conn.close()
 
