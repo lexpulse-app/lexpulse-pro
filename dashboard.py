@@ -22,7 +22,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-baza_date.init_db()
+@st.cache_resource
+def _init_db_once():
+    baza_date.init_db()
+    return True
+
+_init_db_once()
 
 FISIER_SESIUNE = ".sesiune_activa.json"
 
@@ -324,18 +329,22 @@ meniu = st.sidebar.radio(
     ["📊 Panou Monitorizare", "📥 Import & Adăugare", "⚖️ Soluții & Analiză AI"]
 )
 
-def incarca_dosare_firma():
+def _query_df(sql, params=()):
     conn = baza_date.conectare()
-    df = pd.read_sql_query(
-        "SELECT * FROM dosare WHERE activ = 1 AND companie_id = ? ORDER BY id DESC", 
-        conn, 
-        params=(companie_id,)
-    )
+    cur = conn.cursor()
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    cols = [desc[0] for desc in cur.description] if cur.description else []
     conn.close()
-    return df
+    return pd.DataFrame(rows, columns=cols)
+
+def incarca_dosare_firma():
+    return _query_df(
+        "SELECT * FROM dosare WHERE activ = 1 AND companie_id = ? ORDER BY id DESC",
+        (companie_id,)
+    )
 
 def incarca_alerte_firma():
-    conn = baza_date.conectare()
     query = """
     SELECT a.*, d.nume_client, d.contact_client, d.institutie, d.stadiu, d.ultima_minuta 
     FROM alerte a
@@ -343,9 +352,7 @@ def incarca_alerte_firma():
     WHERE a.companie_id = ? 
     ORDER BY a.id DESC
     """
-    df = pd.read_sql_query(query, conn, params=(companie_id,))
-    conn.close()
-    return df
+    return _query_df(query, (companie_id,))
 
 # VEDERE 1: Panou Monitorizare
 if meniu == "📊 Panou Monitorizare":

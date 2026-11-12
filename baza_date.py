@@ -58,7 +58,7 @@ class _ConnWrapper:
         return self._conn.commit()
 
     def close(self):
-        return self._conn.close()
+        pass  # Pastram conexiunea deschisa in cache pentru viteza maxima
 
     def __getattr__(self, name):
         return getattr(self._conn, name)
@@ -71,10 +71,24 @@ def _get_db_url():
     return url
 
 
+_CACHED_PG_CONN = None
+
 def conectare():
+    global _CACHED_PG_CONN
     db_url = _get_db_url()
     if db_url and psycopg2 is not None:
-        return _ConnWrapper(psycopg2.connect(db_url), True)
+        try:
+            if _CACHED_PG_CONN is None or _CACHED_PG_CONN.closed != 0:
+                _CACHED_PG_CONN = psycopg2.connect(db_url)
+                _CACHED_PG_CONN.autocommit = True
+            else:
+                with _CACHED_PG_CONN.cursor() as cur:
+                    cur.execute("SELECT 1")
+            return _ConnWrapper(_CACHED_PG_CONN, True)
+        except Exception:
+            _CACHED_PG_CONN = psycopg2.connect(db_url)
+            _CACHED_PG_CONN.autocommit = True
+            return _ConnWrapper(_CACHED_PG_CONN, True)
     return _ConnWrapper(sqlite3.connect(NUME_DB), False)
 
 
