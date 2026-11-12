@@ -24,6 +24,25 @@ def _verify_session_token(token: str):
         pass
     return None
 
+if not st.session_state.get("user_email"):
+    _tok = st.query_params.get("session", "")
+    _em = _verify_session_token(_tok) if _tok else None
+    if _em and hasattr(baza_date, "obtine_utilizator_dupa_email"):
+        _usr = baza_date.obtine_utilizator_dupa_email(_em)
+        if _usr:
+            st.session_state["autentificat"] = True
+            st.session_state["logged_in"] = True
+            st.session_state["user_email"] = _usr["email"]
+            st.session_state["user_id"] = _usr["id"]
+            st.session_state["companie_id"] = _usr["companie_id"]
+            st.session_state["nume_utilizator"] = _usr.get("nume_complet", "")
+            st.session_state["nume_cabinet"] = _usr.get("nume_cabinet", "")
+            st.session_state["keep_logged_in"] = True
+
+if st.session_state.get("user_email") and st.session_state.get("keep_logged_in", True):
+    if not st.query_params.get("session"):
+        st.query_params["session"] = _gen_session_token(st.session_state["user_email"])
+
 from datetime import datetime, timedelta
 import stripe
 for k in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DATABASE_URL", "STRIPE_SECRET_KEY"]:
