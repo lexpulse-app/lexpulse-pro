@@ -1,150 +1,21 @@
-
 import os
-import streamlit as st
-import hmac, hashlib, base64, time as _time_mod
-
-def _gen_session_token(email: str) -> str:
-    secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
-    exp = int(_time_mod.time()) + 30 * 86400
-    payload = f"{email}|{exp}".encode()
-    sig = hmac.new(secret, payload, hashlib.sha256).hexdigest()[:24]
-    return base64.urlsafe_b64encode(f"{email}|{exp}|{sig}".encode()).decode()
-
-def _verify_session_token(token: str):
-    try:
-        raw = base64.urlsafe_b64decode(token.encode()).decode()
-        email, exp_s, sig = raw.split("|")
-        if int(exp_s) < int(_time_mod.time()):
-            return None
-        secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
-        expected = hmac.new(secret, f"{email}|{exp_s}".encode(), hashlib.sha256).hexdigest()[:24]
-        if hmac.compare_digest(sig, expected):
-            return email
-    except Exception:
-        return None
-    return None
-
-_cur_email = st.session_state.get("user_email") or (st.session_state.get("user") or {}).get("email")
-
-if not _cur_email:
-    _tok = st.query_params.get("session", "")
-    _em = _verify_session_token(_tok) if _tok else None
-    if _em:
-        _usr = baza_date.obtine_utilizator_dupa_email(_em)
-        if _usr:
-            st.session_state["autentificat"] = True
-            st.session_state["logged_in"] = True
-            st.session_state["user_email"] = _usr["email"]
-            st.session_state["user_id"] = _usr["id"]
-            st.session_state["companie_id"] = _usr["companie_id"]
-            st.session_state["nume_utilizator"] = _usr.get("nume_complet", "")
-            st.session_state["nume_cabinet"] = _usr.get("nume_cabinet", "")
-            st.session_state["user"] = _usr
-            st.session_state["keep_logged_in"] = True
-            _cur_email = _usr["email"]
-
-if _cur_email and st.session_state.get("keep_logged_in", True):
-    _expected_tok = _gen_session_token(_cur_email)
-    if st.query_params.get("session") != _expected_tok:
-        st.query_params["session"] = _expected_tok
-
-import hmac, hashlib, base64, time as _time_mod
-
-def _gen_session_token(email: str) -> str:
-    secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
-    exp = int(_time_mod.time()) + 30 * 86400
-    payload = f"{email}|{exp}".encode()
-    sig = hmac.new(secret, payload, hashlib.sha256).hexdigest()[:24]
-    return base64.urlsafe_b64encode(f"{email}|{exp}|{sig}".encode()).decode()
-
-def _verify_session_token(token: str):
-    try:
-        raw = base64.urlsafe_b64decode(token.encode()).decode()
-        email, exp_s, sig = raw.split("|")
-        if int(exp_s) < int(_time_mod.time()):
-            return None
-        secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
-        expected = hmac.new(secret, f"{email}|{exp_s}".encode(), hashlib.sha256).hexdigest()[:24]
-        if hmac.compare_digest(sig, expected):
-            return email
-    except Exception:
-        pass
-    return None
-
-if not st.session_state.get("user_email"):
-    _tok = st.query_params.get("session", "")
-    _em = _verify_session_token(_tok) if _tok else None
-    if _em and hasattr(baza_date, "obtine_utilizator_dupa_email"):
-        _usr = baza_date.obtine_utilizator_dupa_email(_em)
-        if _usr:
-            st.session_state["autentificat"] = True
-            st.session_state["logged_in"] = True
-            st.session_state["user_email"] = _usr["email"]
-            st.session_state["user_id"] = _usr["id"]
-            st.session_state["companie_id"] = _usr["companie_id"]
-            st.session_state["nume_utilizator"] = _usr.get("nume_complet", "")
-            st.session_state["nume_cabinet"] = _usr.get("nume_cabinet", "")
-            st.session_state["keep_logged_in"] = True
-
-if st.session_state.get("user_email") and st.session_state.get("keep_logged_in", True):
-    if not st.query_params.get("session"):
-        st.query_params["session"] = _gen_session_token(st.session_state["user_email"])
-
+import json
+import hmac
+import hashlib
+import base64
+import time as _time_mod
+import urllib.parse
 from datetime import datetime, timedelta
+
+import streamlit as st
+import pandas as pd
 import stripe
+
 for k in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DATABASE_URL", "STRIPE_SECRET_KEY"]:
     if k in st.secrets and not os.environ.get(k):
         os.environ[k] = str(st.secrets[k])
 
-import os
-import json
-import streamlit as st
-import pandas as pd
-import urllib.parse
 import baza_date
-
-import hmac, hashlib, base64, time as _time_mod
-
-def _gen_session_token(email: str) -> str:
-    secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
-    exp = int(_time_mod.time()) + 30 * 86400
-    payload = f"{email}|{exp}".encode()
-    sig = hmac.new(secret, payload, hashlib.sha256).hexdigest()[:24]
-    return base64.urlsafe_b64encode(f"{email}|{exp}|{sig}".encode()).decode()
-
-def _verify_session_token(token: str):
-    try:
-        raw = base64.urlsafe_b64decode(token.encode()).decode()
-        email, exp_s, sig = raw.split("|")
-        if int(exp_s) < int(_time_mod.time()):
-            return None
-        secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
-        expected = hmac.new(secret, f"{email}|{exp_s}".encode(), hashlib.sha256).hexdigest()[:24]
-        if hmac.compare_digest(sig, expected):
-            return email
-    except Exception:
-        return None
-    return None
-
-if not st.session_state.get("user_email"):
-    _tok = st.query_params.get("session", "")
-    _em = _verify_session_token(_tok) if _tok else None
-    if _em:
-        _usr = baza_date.obtine_utilizator_dupa_email(_em)
-        if _usr:
-            st.session_state["autentificat"] = True
-            st.session_state["logged_in"] = True
-            st.session_state["user_email"] = _usr["email"]
-            st.session_state["user_id"] = _usr["id"]
-            st.session_state["companie_id"] = _usr["companie_id"]
-            st.session_state["nume_utilizator"] = _usr.get("nume_complet", "")
-            st.session_state["nume_cabinet"] = _usr.get("nume_cabinet", "")
-            st.session_state["keep_logged_in"] = True
-
-if st.session_state.get("user_email") and st.session_state.get("keep_logged_in", True):
-    if not st.query_params.get("session"):
-        st.query_params["session"] = _gen_session_token(st.session_state["user_email"])
-
 import app
 import export_pdf
 import calendar_sync
@@ -163,11 +34,50 @@ def _init_db_once():
 
 _init_db_once()
 
+# ----------------- PERSISTENȚĂ SESIUNE 30 ZILE (HMAC TOKEN ÎN URL) -----------------
+def _gen_session_token(user_dict: dict) -> str:
+    secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
+    exp = int(_time_mod.time()) + 30 * 86400
+    raw_payload = json.dumps({
+        "id": user_dict["id"],
+        "email": user_dict["email"],
+        "nume_firma": user_dict["nume_firma"],
+        "exp": exp
+    }, separators=(",", ":"))
+    b64 = base64.urlsafe_b64encode(raw_payload.encode()).decode()
+    sig = hmac.new(secret, b64.encode(), hashlib.sha256).hexdigest()[:24]
+    return f"{b64}.{sig}"
+
+def _verify_session_token(token: str):
+    try:
+        if not token or "." not in token:
+            return None
+        b64, sig = token.rsplit(".", 1)
+        secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
+        expected = hmac.new(secret, b64.encode(), hashlib.sha256).hexdigest()[:24]
+        if not hmac.compare_digest(sig, expected):
+            return None
+        data = json.loads(base64.urlsafe_b64decode(b64.encode()).decode())
+        if int(data.get("exp", 0)) < int(_time_mod.time()):
+            return None
+        return {"id": data["id"], "email": data["email"], "nume_firma": data["nume_firma"]}
+    except Exception:
+        return None
+
 if "utilizator" not in st.session_state:
     st.session_state.utilizator = None
 
+# Restaurare automată la refresh dacă există ?session=... valid
+if not st.session_state.utilizator and "session" in st.query_params:
+    restored_user = _verify_session_token(st.query_params["session"])
+    if restored_user:
+        st.session_state.utilizator = restored_user
+        st.session_state.keep_logged_in = True
+
 def deconectare():
     st.session_state.utilizator = None
+    st.session_state.keep_logged_in = False
+    st.query_params.pop("session", None)
     st.rerun()
 
 def formateaza_telefon_whatsapp(telefon_raw):
@@ -393,6 +303,9 @@ if not st.session_state.utilizator:
                     user = baza_date.autentifica_utilizator(email_login, parola_login)
                     if user:
                         st.session_state.utilizator = user
+                        st.session_state.keep_logged_in = bool(remember_me)
+                        if remember_me:
+                            st.query_params["session"] = _gen_session_token(user)
                         st.success("Autentificare reușită!")
                         st.rerun()
                     else:
@@ -425,6 +338,12 @@ if not st.session_state.utilizator:
 user = st.session_state.utilizator
 companie_id = user["id"]
 
+# Menținem ?session=... sincronizat în URL pe durata navigării și la întoarcerea din Stripe
+if st.session_state.get("keep_logged_in", True):
+    tok_curent = _gen_session_token(user)
+    if "session" not in st.query_params:
+        st.query_params["session"] = tok_curent
+
 st.sidebar.markdown(f"""
     <div style='padding: 8px 0 16px 0;'>
         <div style='font-size: 11px; text-transform: uppercase; color: #94A3B8; font-weight: 700; letter-spacing: 0.05em;'>PORTAL ACTIV</div>
@@ -441,7 +360,7 @@ detalii_comp = baza_date.obtine_detalii_companie(companie_id) or {
     "plan": "trial", "limita_dosare": 2, "telegram_chat_id": "", "status_abonament": "active", "data_expirare": ""
 }
 
-# Procesare automata revenire din Stripe Checkout (?stripe_session=...)
+# Procesare automată revenire din Stripe Checkout (?stripe_session=...)
 stripe_key = os.getenv("STRIPE_SECRET_KEY", "").strip()
 if stripe_key:
     stripe.api_key = stripe_key
@@ -449,22 +368,26 @@ if stripe_key:
     if "stripe_session" in q_params:
         sess_id = q_params["stripe_session"]
         try:
-            sess = stripe.checkout.Session.retrieve(sess_id)
-            if sess.payment_status == "paid":
-                meta = sess.metadata or {}
+            sess_obj = stripe.checkout.Session.retrieve(sess_id)
+            sess_dict = sess_obj.to_dict_recursive() if hasattr(sess_obj, "to_dict_recursive") else dict(sess_obj)
+            if sess_dict.get("payment_status") == "paid":
+                meta = dict(sess_dict.get("metadata") or {})
                 plan_ales = meta.get("plan", "starter")
                 limita_noua = int(meta.get("limita", 30))
                 exp_str = (datetime.now() + timedelta(days=30)).strftime("%d.%m.%Y")
                 baza_date.activeaza_plan_companie(
                     companie_id, plan_ales, limita_noua,
-                    stripe_customer_id=str(sess.customer or ""),
+                    stripe_customer_id=str(sess_dict.get("customer") or ""),
                     data_expirare=exp_str,
-                    stripe_subscription_id=str(sess.subscription or "")
+                    stripe_subscription_id=str(sess_dict.get("subscription") or "")
                 )
-                st.query_params.clear()
+                st.query_params.pop("stripe_session", None)
                 st.success(f"Plata a fost confirmată! Planul {plan_ales.upper()} este activ până la {exp_str}.")
                 detalii_comp = baza_date.obtine_detalii_companie(companie_id)
+            else:
+                st.query_params.pop("stripe_session", None)
         except Exception as se:
+            st.query_params.pop("stripe_session", None)
             st.warning(f"Verificare plată în curs: {se}")
 
 st.sidebar.markdown(
@@ -686,7 +609,6 @@ elif meniu == "⚖️ Soluții & Analiză AI":
     df_alerte = incarca_alerte_firma()
     
     if not df_alerte.empty:
-        # --- SELECTOR DINAMIC DOSARE PENTRU AI ---
         conn_sel = baza_date.conectare()
         c_sel = conn_sel.cursor()
         c_sel.execute('SELECT numar_dosar, nume_client FROM dosare WHERE companie_id = ?', (companie_id,))
@@ -731,7 +653,6 @@ elif meniu == "⚖️ Soluții & Analiză AI":
                 </div>
             """, unsafe_allow_html=True)
             
-            # WhatsApp link
             tel_formatat = formateaza_telefon_whatsapp(row.get('contact_client'))
             mesaj_codificat = urllib.parse.quote(row['mesaj_client'])
             
@@ -742,7 +663,6 @@ elif meniu == "⚖️ Soluții & Analiză AI":
                 link_wa = f"https://wa.me/?text={mesaj_codificat}"
                 label_btn = "📲 WhatsApp (Alege destinatar)"
             
-            # Calendare
             link_gcal = calendar_sync.genereaza_link_google_calendar(
                 row['numar_dosar'], row.get('institutie', 'Instanță'), noul_t, row['sarcini_avocat']
             )
@@ -750,7 +670,6 @@ elif meniu == "⚖️ Soluții & Analiză AI":
                 row['numar_dosar'], row.get('institutie', 'Instanță'), noul_t, row['sarcini_avocat']
             )
 
-            # Rând de acțiuni: WhatsApp, Fișă PDF, Google Calendar, Apple / iCal
             c_wa, c_pdf, c_gcal, c_ical = st.columns([1.5, 1.4, 1.3, 1.3])
             
             with c_wa:
