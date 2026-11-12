@@ -177,7 +177,16 @@ def sincronizeaza_toate_dosarele(companie_id=None):
                 
                 termen = analiza.get("noul_termen")
                 if termen and str(termen).lower() != "null":
-                    calendar_sync.creeaza_eveniment_ics(numar, inst_str, termen)
+                    try:
+                        if hasattr(calendar_sync, "creeaza_eveniment_ics"):
+                            calendar_sync.creeaza_eveniment_ics(numar, inst_str, termen)
+                        elif hasattr(calendar_sync, "genereaza_fisier_ics"):
+                            ics_data = calendar_sync.genereaza_fisier_ics(numar, inst_str, termen, analiza.get("sarcini_avocat", ""))
+                            if ics_data:
+                                with open(f"Termen_{numar.replace('/', '_')}.ics", "wb") as f_ics:
+                                    f_ics.write(ics_data)
+                    except Exception as ce:
+                        print(f"Avertisment calendar_sync: {ce}")
 
                 try:
                     notificari.trimite_notificare_telegram(numar, client, inst_str, analiza)
