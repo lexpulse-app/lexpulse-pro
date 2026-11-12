@@ -1,36 +1,111 @@
+import os
 import sqlite3
 import bcrypt
+from dotenv import load_dotenv
+
+try:
+    import streamlit as st
+    for k, v in st.secrets.items():
+        if isinstance(v, str) and k not in os.environ:
+            os.environ[k] = v
+except Exception:
+    pass
+
+load_dotenv()
+
+try:
+    import psycopg2
+    from psycopg2 import IntegrityError as PgIntegrityError
+except ImportError:
+    psycopg2 = None
+    PgIntegrityError = Exception
 
 NUME_DB = "asistent_dosare.db"
+INTEGRITY_ERRORS = (sqlite3.IntegrityError, PgIntegrityError)
+
+
+class _CursorWrapper:
+    def __init__(self, cursor, is_pg):
+        self._cursor = cursor
+        self._is_pg = is_pg
+
+    def execute(self, sql, params=None):
+        if self._is_pg:
+            sql = sql.replace("?", "%s")
+        if params is not None:
+            return self._cursor.execute(sql, params)
+        return self._cursor.execute(sql)
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
+class _ConnWrapper:
+    def __init__(self, conn, is_pg):
+        self._conn = conn
+        self._is_pg = is_pg
+
+    def cursor(self):
+        return _CursorWrapper(self._conn.cursor(), self._is_pg)
+
+    def commit(self):
+        return self._conn.commit()
+
+    def close(self):
+        return self._conn.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+def _get_db_url():
+    url = os.getenv("DATABASE_URL", "").strip()
+    if url.startswith("Postgresql://"):
+        url = "postgresql://" + url[len("Postgresql://"):]
+    return url
+
 
 def conectare():
-    return sqlite3.connect(NUME_DB)
+    db_url = _get_db_url()
+    if db_url and psycopg2 is not None:
+        return _ConnWrapper(psycopg2.connect(db_url), True)
+    return _ConnWrapper(sqlite3.connect(NUME_DB), False)
+
 
 def hash_parola(parola):
     return bcrypt.hashpw(parola.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
+
 def verifica_parola(parola_introdusa, hash_stocat):
     return bcrypt.checkpw(parola_introdusa.encode('utf-8'), hash_stocat.encode('utf-8'))
+
 
 def init_db():
     conn = conectare()
     cursor = conn.cursor()
-    
-    # Tabel organizații / firme de avocatură
-    cursor.execute("""
+    is_pg = conn._is_pg
+
+    pk = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS companii (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {pk},
         nume_firma TEXT NOT NULL,
         email_admin TEXT UNIQUE NOT NULL,
         parola_hash TEXT NOT NULL,
         data_inregistrare TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
-    
-    # Tabel dosare asociate fiecărei firme
-    cursor.execute("""
+
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS dosare (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {pk},
         companie_id INTEGER NOT NULL,
         numar_dosar TEXT NOT NULL,
         nume_client TEXT,
@@ -45,11 +120,10 @@ def init_db():
         FOREIGN KEY (companie_id) REFERENCES companii(id)
     )
     """)
-    
-    # Tabel alerte
-    cursor.execute("""
+
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS alerte (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {pk},
         companie_id INTEGER NOT NULL,
         numar_dosar TEXT NOT NULL,
         data_adaugare TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -60,9 +134,10 @@ def init_db():
         FOREIGN KEY (companie_id) REFERENCES companii(id)
     )
     """)
-    
+
     conn.commit()
     conn.close()
+
 
 def inregistreaza_companie(nume_firma, email, parola):
     conn = conectare()
@@ -75,10 +150,11 @@ def inregistreaza_companie(nume_firma, email, parola):
         """, (nume_firma.strip(), email.strip().lower(), parola_h))
         conn.commit()
         return True, "Contul a fost creat cu succes!"
-    except sqlite3.IntegrityError:
+    except INTEGRITY_ERRORS:
         return False, "Există deja un cont înregistrat cu acest email."
     finally:
         conn.close()
+
 
 def autentifica_utilizator(email, parola):
     conn = conectare()
@@ -86,10 +162,11 @@ def autentifica_utilizator(email, parola):
     cursor.execute("SELECT id, nume_firma, parola_hash FROM companii WHERE email_admin = ?", (email.strip().lower(),))
     row = cursor.fetchone()
     conn.close()
-    
+
     if row and verifica_parola(parola, row[2]):
         return {"id": row[0], "nume_firma": row[1], "email": email}
     return None
+
 
 def adauga_dosar(companie_id, numar_dosar, nume_client="", contact_client=""):
     conn = conectare()
@@ -101,10 +178,11 @@ def adauga_dosar(companie_id, numar_dosar, nume_client="", contact_client=""):
         """, (companie_id, numar_dosar.strip(), nume_client.strip(), contact_client.strip()))
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
+    except INTEGRITY_ERRORS:
         return False
     finally:
         conn.close()
+
 
 def obtine_dosare_active(companie_id=None):
     conn = conectare()
@@ -123,6 +201,7 @@ def obtine_dosare_active(companie_id=None):
     conn.close()
     return randuri
 
+
 def actualizeaza_dosar(numar_dosar, companie_id, institutie, obiect, stadiu, data_sedinta, minuta):
     conn = conectare()
     cursor = conn.cursor()
@@ -134,6 +213,7 @@ def actualizeaza_dosar(numar_dosar, companie_id, institutie, obiect, stadiu, dat
     conn.commit()
     conn.close()
 
+
 def salveaza_alerta(companie_id, numar_dosar, tip_solutie, noul_termen, sarcini, mesaj):
     conn = conectare()
     cursor = conn.cursor()
@@ -144,8 +224,6 @@ def salveaza_alerta(companie_id, numar_dosar, tip_solutie, noul_termen, sarcini,
     conn.commit()
     conn.close()
 
-if __name__ == "__main__":
-    init_db()
 
 def sterge_dosar(companie_id, numar_dosar):
     conn = conectare()
@@ -155,3 +233,7 @@ def sterge_dosar(companie_id, numar_dosar):
     conn.commit()
     conn.close()
     return True
+
+
+if __name__ == "__main__":
+    init_db()

@@ -56,10 +56,11 @@ Răspunde STRICT cu un obiect JSON valid, fără introduceri sau explicații în
     try:
         raspuns = client_ai.messages.create(
             model="claude-haiku-5-5",
-            max_tokens=800,
+            max_tokens=1500,
+            thinking={"type": "disabled"},
             messages=[{"role": "user", "content": prompt}]
         )
-        raw = raspuns.content[0].text.strip()
+        raw = next((b.text for b in raspuns.content if getattr(b, "type", None) == "text" and hasattr(b, "text")), "").strip()
         if "```json" in raw:
             raw = raw.split("```json")[1].split("```")[0].strip()
         elif "```" in raw:

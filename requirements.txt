@@ -6,3 +6,4 @@ icalendar
 python-dotenv
 requests
 zeep
+psycopg2-binary
