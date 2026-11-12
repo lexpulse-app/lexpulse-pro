@@ -742,7 +742,6 @@ elif meniu == "💳 Setări & Abonament":
                 else:
                     try:
                         session = stripe.checkout.Session.create(
-                            payment_method_types=["card"],
                             line_items=[{
                                 "price_data": {
                                     "currency": "ron",
@@ -780,7 +779,6 @@ elif meniu == "💳 Setări & Abonament":
                 else:
                     try:
                         session = stripe.checkout.Session.create(
-                            payment_method_types=["card"],
                             line_items=[{
                                 "price_data": {
                                     "currency": "ron",
