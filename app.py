@@ -1,4 +1,13 @@
 import os
+try:
+    import streamlit as st
+    for k, v in st.secrets.items():
+        if isinstance(v, str) and k not in os.environ:
+            os.environ[k] = v
+except Exception:
+    pass
+
+import os
 import json
 import zeep
 from dotenv import load_dotenv
