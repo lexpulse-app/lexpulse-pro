@@ -695,6 +695,7 @@ elif meniu == "⚖️ Soluții & Analiză AI":
                     label="📄 Fișă PDF",
                     data=pdf_bytes,
                     file_name=f"Fisa_{row['numar_dosar'].replace('/', '_')}.pdf",
+                    key=f"btn_pdf_{idx}_{row.get('id', idx)}",
                     mime="application/pdf",
                     use_container_width=True
                 )
@@ -703,13 +704,14 @@ elif meniu == "⚖️ Soluții & Analiză AI":
                 if link_gcal:
                     st.link_button("🌐 Google Calendar", link_gcal, use_container_width=True)
                 else:
-                    st.button("🌐 Google Calendar", disabled=True, use_container_width=True, help="Fără termen viitor consemnat")
+                    st.button("🌐 Google Calendar", disabled=True, use_container_width=True, help="Fără termen viitor consemnat", key=f"btn_gcal_dis_{idx}_{row.get('id', idx)}")
 
             with c_ical:
                 st.download_button(
                     label="📅 Apple Calendar",
                     data=ics_bytes,
                     file_name=f"Termen_{row['numar_dosar'].replace('/', '_')}.ics",
+                    key=f"btn_ics_{idx}_{row.get('id', idx)}",
                     mime="text/calendar",
                     use_container_width=True
                 )
