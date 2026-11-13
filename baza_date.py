@@ -413,3 +413,29 @@ def actualizeaza_email_companie(companie_id: int, email_notificari: str):
     c.execute("UPDATE companii SET email_notificari = ? WHERE id = ?", (email_notificari.strip(), companie_id))
     conn.commit()
     conn.close()
+
+def dezactiveaza_abonament_expirat(companie_id: int):
+    conn = conectare()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE companii SET plan = 'expirat', limita_dosare = 0, status_abonament = 'expired' WHERE id = ?",
+        (companie_id,)
+    )
+    conn.commit()
+    conn.close()
+
+def obtine_subscription_id_companie(companie_id: int) -> str:
+    conn = conectare()
+    c = conn.cursor()
+    try:
+        c.execute("ALTER TABLE companii ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    c.execute("SELECT stripe_subscription_id FROM companii WHERE id = ?", (companie_id,))
+    row = c.fetchone()
+    conn.close()
+    return (row[0] or "").strip() if row else ""
