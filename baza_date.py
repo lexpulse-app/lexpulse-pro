@@ -338,6 +338,9 @@ def activeaza_plan_companie(companie_id, plan, limita_dosare, stripe_customer_id
 
 
 def verifica_limita_dosare(companie_id):
+    det = obtine_detalii_companie(companie_id) or {}
+    if det.get("plan") == "expirat" or int(det.get("limita_dosare", 0)) <= 0:
+        return False, 0, 0
     info = obtine_detalii_companie(companie_id)
     if not info:
         return False, 0, 0
@@ -369,6 +372,32 @@ def obtine_utilizator_dupa_email(email: str):
         return None
     return {"id": row[0], "email": row[1], "nume_complet": row[2], "companie_id": row[3], "nume_cabinet": row[4]}
 
+
+def dezactiveaza_abonament_expirat(companie_id: int):
+    conn = conectare()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE companii SET plan = 'expirat', limita_dosare = 0, status_abonament = 'expired' WHERE id = ?",
+        (companie_id,)
+    )
+    conn.commit()
+    conn.close()
+
+def obtine_subscription_id_companie(companie_id: int) -> str:
+    conn = conectare()
+    c = conn.cursor()
+    try:
+        c.execute("ALTER TABLE companii ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    c.execute("SELECT stripe_subscription_id FROM companii WHERE id = ?", (companie_id,))
+    row = c.fetchone()
+    conn.close()
+    return (row[0] or "").strip() if row else ""
 
 def actualizeaza_email_companie(companie_id: int, email_notificari: str):
     conn = conectare()

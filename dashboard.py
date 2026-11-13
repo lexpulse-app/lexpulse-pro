@@ -390,6 +390,20 @@ if stripe_key:
             st.query_params.pop("stripe_session", None)
             st.warning(f"Verificare plată în curs: {se}")
 
+
+# Verificare automata reinnoire / anulare abonament Stripe (fara intoarcere la trial)
+if stripe_key and detalii_comp.get("plan") not in ("trial", "enterprise", "expirat"):
+    sub_id = baza_date.obtine_subscription_id_companie(companie_id)
+    if sub_id:
+        try:
+            sub_obj = stripe.Subscription.retrieve(sub_id)
+            sub_dict = sub_obj.to_dict_recursive() if hasattr(sub_obj, "to_dict_recursive") else dict(sub_obj)
+            if sub_dict.get("status") not in ("active", "trialing"):
+                baza_date.dezactiveaza_abonament_expirat(companie_id)
+                detalii_comp = baza_date.obtine_detalii_companie(companie_id)
+        except Exception:
+            pass
+
 st.sidebar.markdown(
     f"<div style='background:#1E293B;padding:10px 12px;border-radius:8px;margin-bottom:12px;font-size:12px;'>"
     f"Plan activ: <strong style='color:#38BDF8;'>{detalii_comp['plan'].upper()}</strong><br/>"
@@ -397,6 +411,10 @@ st.sidebar.markdown(
     f"</div>",
     unsafe_allow_html=True
 )
+
+
+if detalii_comp.get("plan") == "expirat":
+    st.error("⚠️ Abonamentul acestui cabinet a expirat sau a fost anulat. Perioada de trial nu mai este disponibilă — activează un plan **Starter** sau **Pro** din secțiunea **💳 Setări & Abonament** pentru a relua monitorizarea și adăugarea dosarelor.")
 
 meniu = st.sidebar.radio(
     "Navigare",
