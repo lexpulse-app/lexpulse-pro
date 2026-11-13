@@ -373,6 +373,14 @@ def obtine_utilizator_dupa_email(email: str):
 def actualizeaza_email_companie(companie_id: int, email_notificari: str):
     conn = conectare()
     c = conn.cursor()
+    try:
+        c.execute("ALTER TABLE companii ADD COLUMN IF NOT EXISTS email_notificari TEXT")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     c.execute("UPDATE companii SET email_notificari = ? WHERE id = ?", (email_notificari.strip(), companie_id))
     conn.commit()
     conn.close()
