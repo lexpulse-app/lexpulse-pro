@@ -369,7 +369,7 @@ if stripe_key:
         sess_id = q_params["stripe_session"]
         try:
             sess_obj = stripe.checkout.Session.retrieve(sess_id)
-            sess_dict = sess_obj.to_dict_recursive() if hasattr(sess_obj, "to_dict_recursive") else dict(sess_obj)
+            sess_dict = sess_obj.to_dict() if hasattr(sess_obj, "to_dict") else dict(sess_obj)
             if sess_dict.get("payment_status") == "paid":
                 meta = dict(sess_dict.get("metadata") or {})
                 plan_ales = meta.get("plan", "starter")
@@ -397,7 +397,7 @@ if stripe_key and detalii_comp.get("plan") not in ("trial", "enterprise", "expir
     if sub_id:
         try:
             sub_obj = stripe.Subscription.retrieve(sub_id)
-            sub_dict = sub_obj.to_dict_recursive() if hasattr(sub_obj, "to_dict_recursive") else dict(sub_obj)
+            sub_dict = sub_obj.to_dict() if hasattr(sub_obj, "to_dict") else dict(sub_obj)
             if sub_dict.get("status") not in ("active", "trialing"):
                 baza_date.dezactiveaza_abonament_expirat(companie_id)
                 detalii_comp = baza_date.obtine_detalii_companie(companie_id)
@@ -445,6 +445,89 @@ def incarca_alerte_firma():
     ORDER BY a.id DESC
     """
     return _query_df(query, (companie_id,))
+
+def _afiseaza_paywall_upgrade(companie_id: int, user_email: str, stripe_key: str):
+    app_url = "https://lexpulse-pro.streamlit.app"
+    st.markdown("""
+        <div style="background:#FFFBEB;border:1px solid #F59E0B;border-radius:12px;padding:16px 20px;margin:14px 0;">
+            <strong style="color:#92400E;font-size:15px;">🚀 Deblochează capacitate extinsă pentru cabinetul tău</strong><br/>
+            <span style="color:#78350F;font-size:13px;">Alege unul dintre planurile comerciale de mai jos pentru a continua adăugarea dosarelor instant:</span>
+        </div>
+    """, unsafe_allow_html=True)
+    cp1, cp2 = st.columns(2, gap="large")
+    with cp1:
+        st.markdown("""
+            <div class="metric-card" style="min-height: 165px;">
+                <div class="metric-title">CABINET STARTER</div>
+                <div class="metric-value">149 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
+                <p style="font-size:13px;color:#475569;margin-top:8px;line-height:1.5;">
+                    • Până la <strong>30 dosare</strong> active<br/>
+                    • Verificare zilnică Portal Just<br/>
+                    • Analiză AI + Telegram, Email & Calendar
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("Activează Starter (149 RON)", key="pw_btn_starter", use_container_width=True):
+            if not stripe_key:
+                st.warning("Configurează STRIPE_SECRET_KEY în Secrets.")
+            else:
+                try:
+                    sess = stripe.checkout.Session.create(
+                        line_items=[{
+                            "price_data": {
+                                "currency": "ron",
+                                "product_data": {"name": "LexPulse Pro — Plan Cabinet Starter (30 dosare)"},
+                                "unit_amount": 14900,
+                                "recurring": {"interval": "month"},
+                            },
+                            "quantity": 1,
+                        }],
+                        mode="subscription",
+                        customer_email=user_email,
+                        metadata={"companie_id": str(companie_id), "plan": "starter", "limita": "30"},
+                        success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
+                        cancel_url=app_url,
+                    )
+                    st.link_button("💳 Mergi la Plata Securizată Stripe", sess.url, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Eroare Stripe: {e}")
+
+    with cp2:
+        st.markdown("""
+            <div class="metric-card" style="min-height: 165px;">
+                <div class="metric-title">SOCIETATE PRO</div>
+                <div class="metric-value">349 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
+                <p style="font-size:13px;color:#475569;margin-top:8px;line-height:1.5;">
+                    • Până la <strong>150 dosare</strong> active<br/>
+                    • Verificare automată de 3x/zi<br/>
+                    • Rapoarte PDF executive + Export registru
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("Activează Pro (349 RON)", key="pw_btn_pro", use_container_width=True):
+            if not stripe_key:
+                st.warning("Configurează STRIPE_SECRET_KEY în Secrets.")
+            else:
+                try:
+                    sess = stripe.checkout.Session.create(
+                        line_items=[{
+                            "price_data": {
+                                "currency": "ron",
+                                "product_data": {"name": "LexPulse Pro — Plan Societate Pro (150 dosare)"},
+                                "unit_amount": 34900,
+                                "recurring": {"interval": "month"},
+                            },
+                            "quantity": 1,
+                        }],
+                        mode="subscription",
+                        customer_email=user_email,
+                        metadata={"companie_id": str(companie_id), "plan": "pro", "limita": "150"},
+                        success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
+                        cancel_url=app_url,
+                    )
+                    st.link_button("💳 Mergi la Plata Securizată Stripe", sess.url, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Eroare Stripe: {e}")
 
 # VEDERE 1: Panou Monitorizare
 if meniu == "📊 Panou Monitorizare":
@@ -569,7 +652,8 @@ elif meniu == "📥 Import & Adăugare":
                 if not nr.strip():
                     st.error("Introduceți numărul dosarului!")
                 elif not permis:
-                    st.error(f"Ai atins limita planului curent ({nr_crt}/{lim_max} dosare). Accesează '💳 Setări & Abonament' pentru upgrade.")
+                    st.session_state["arata_paywall_import"] = True
+                    st.error(f"Ai atins limita planului curent ({nr_crt}/{lim_max} dosare).")
                 else:
                     rez_add = baza_date.adauga_dosar(companie_id, nr, cl, ct)
                     ok_add, msg_add = rez_add if isinstance(rez_add, tuple) else (rez_add, "Operațiune finalizată.")
@@ -577,6 +661,9 @@ elif meniu == "📥 Import & Adăugare":
                         st.success(msg_add)
                     else:
                         st.warning(msg_add)
+        permis_acum, _, _ = baza_date.verifica_limita_dosare(companie_id)
+        if st.session_state.get("arata_paywall_import") or not permis_acum:
+            _afiseaza_paywall_upgrade(companie_id, user["email"], stripe_key)
 
     with tab2:
         st.write("Încărcați un registru electronic existent (`.xlsx` sau `.csv`):")
@@ -609,7 +696,8 @@ elif meniu == "📥 Import & Adăugare":
                                 count += 1
                     st.success(f"Au fost importate cu succes {count} dosare!")
                     if oprit_limita:
-                        st.warning("Import oprit la atingerea limitei de dosare a planului. Fă upgrade din '💳 Setări & Abonament'.")
+                        st.warning("Import oprit la atingerea limitei de dosare a planului.")
+                        _afiseaza_paywall_upgrade(companie_id, user["email"], stripe_key)
             except Exception as ex:
                 st.error(f"Eroare procesare fișier: {ex}")
 
