@@ -725,163 +725,172 @@ elif meniu == "💳 Setări & Abonament":
         <div class="exec-header">
             <div>
                 <h1>Configurare Notificări & Abonament SaaS</h1>
-                <p>Conectare alertare individuală Telegram și administrare plan comercial</p>
+                <p>Canale automate de alertare pentru cabinet și administrare plan comercial</p>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-    col_tg, col_plan = st.columns([1, 1.3])
+    # --- RÂNDUL 1: CANALE DE NOTIFICARE (2 COLOANE EGALE) ---
+    st.subheader("🔔 Canale de Alertare Automată")
+    col_tg, col_em = st.columns(2, gap="large")
 
     with col_tg:
-        st.subheader("📲 Alertare Telegram Cabinet")
-        st.caption("Fiecare cabinet primește notificările exclusiv pe propriul cont Telegram.")
-        with st.form("form_tg_settings"):
-            tg_val = st.text_input(
-                "Telegram Chat ID",
-                value=detalii_comp.get("telegram_chat_id", ""),
-                placeholder="ex: 8359525029",
-                help="Deschide @userinfobot pe Telegram și apasă Start pentru a afla Chat ID-ul tău."
-            )
-            c_save_tg, c_test_tg = st.columns(2)
-            with c_save_tg:
-                save_tg = st.form_submit_button("Salvează ID", use_container_width=True)
-            with c_test_tg:
-                test_tg = st.form_submit_button("Trimite Test", use_container_width=True)
+        with st.container(border=True):
+            st.markdown("#### 📲 Alertare Telegram")
+            st.caption("Primește instant minutele și termenele noi pe Telegram.")
+            with st.form("form_tg_settings", border=False):
+                tg_val = st.text_input(
+                    "Telegram Chat ID",
+                    value=detalii_comp.get("telegram_chat_id", ""),
+                    placeholder="ex: 8359525029",
+                    help="Deschide @userinfobot pe Telegram și apasă Start pentru a afla Chat ID-ul tău."
+                )
+                c_save_tg, c_test_tg = st.columns(2)
+                with c_save_tg:
+                    save_tg = st.form_submit_button("Salvează ID", use_container_width=True)
+                with c_test_tg:
+                    test_tg = st.form_submit_button("Trimite Test", use_container_width=True)
 
-            if save_tg or test_tg:
-                baza_date.actualizeaza_telegram_companie(companie_id, tg_val)
-                st.success("Telegram Chat ID salvat pentru acest cabinet!")
-                if test_tg and tg_val.strip():
-                    import notificari
-                    ok_t = notificari.trimite_notificare_telegram(
-                        "TEST/2026", "Client Test", "Portal LexPulse Pro",
-                        {
-                            "tip_solutie": "Conexiune activă",
-                            "noul_termen": "Configurat cu succes",
-                            "cale_atac": "N/A",
-                            "sarcini_avocat": "Vei primi aici toate minutele și termenele noi.",
-                            "mesaj_client": "Alertare activată pentru cabinetul dumneavoastră."
-                        },
-                        chat_id_destinatar=tg_val.strip()
-                    )
-                    if ok_t:
-                        st.info("Mesaj de test trimis! Verifică telefonul.")
-                    else:
-                        st.error("Nu s-a putut trimite. Pornește mai întâi o conversație (/start) cu botul LexPulse pe Telegram.")
-
-        st.write("---")
-        st.subheader("📧 Alertare Email Cabinet (Resend)")
-        st.caption("Primește minutele și termenele noi direct pe emailul cabinetului.")
-        with st.form("form_email_settings"):
-            em_val = st.text_input(
-                "Email notificări cabinet",
-                value=detalii_comp.get("email_notificari") or user["email"],
-                placeholder="notificari@cabinet-avocat.ro"
-            )
-            c_save_em, c_test_em = st.columns(2)
-            with c_save_em:
-                save_em = st.form_submit_button("Salvează Email", use_container_width=True)
-            with c_test_em:
-                test_em = st.form_submit_button("Trimite Email Test", use_container_width=True)
-
-            if save_em or test_em:
-                baza_date.actualizeaza_email_companie(companie_id, em_val)
-                st.success("Adresa de email pentru notificări a fost salvată!")
-                if test_em and em_val.strip():
-                    import notificari
-                    ok_e = notificari.trimite_notificare_email(
-                        em_val.strip(), "TEST/2026", "Client Test", "Portal LexPulse Pro",
-                        {
-                            "tip_solutie": "Conexiune Email Activă",
-                            "noul_termen": "Configurat cu succes",
-                            "sarcini_avocat": "Vei primi aici toate minutele și termenele noi.",
-                            "mesaj_client": "Alertare pe email activată pentru cabinetul dumneavoastră."
-                        }
-                    )
-                    if ok_e:
-                        st.info("Email de test trimis! Verifică Inbox-ul (sau Spam).")
-                    else:
-                        st.error("Nu s-a putut trimite. Verifică dacă RESEND_API_KEY este salvat în Secrets.")
-
-    with col_plan:
-        st.subheader("💎 Planuri & Facturare")
-        st.write(f"**Plan curent:** `{detalii_comp['plan'].upper()}` | **Limită:** `{detalii_comp['limita_dosare']} dosare`")
-        if detalii_comp.get("data_expirare"):
-            st.write(f"**Valabil până la:** {detalii_comp['data_expirare']}")
-
-        app_url = "https://lexpulse-pro.streamlit.app"
-
-        c_p1, c_p2 = st.columns(2)
-        with c_p1:
-            st.markdown("""
-                <div class="metric-card">
-                    <div class="metric-title">CABINET STARTER</div>
-                    <div class="metric-value">149 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
-                    <p style="font-size:13px;color:#475569;margin-top:8px;">
-                        • Până la <strong>30 dosare</strong> active<br/>
-                        • Verificare automată zilnică<br/>
-                        • Analiză AI + Telegram + Calendar
-                    </p>
-                </div>
-            """, unsafe_allow_html=True)
-            if st.button("Activează Starter (149 RON)", use_container_width=True):
-                if not stripe_key:
-                    st.warning("Configurează STRIPE_SECRET_KEY în Secrets pentru a activa plățile live.")
-                else:
-                    try:
-                        session = stripe.checkout.Session.create(
-                            line_items=[{
-                                "price_data": {
-                                    "currency": "ron",
-                                    "product_data": {"name": "LexPulse Pro — Plan Cabinet Starter (30 dosare)"},
-                                    "unit_amount": 14900,
-                                    "recurring": {"interval": "month"},
-                                },
-                                "quantity": 1,
-                            }],
-                            mode="subscription",
-                            customer_email=user["email"],
-                            metadata={"companie_id": str(companie_id), "plan": "starter", "limita": "30"},
-                            success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
-                            cancel_url=app_url,
+                if save_tg or test_tg:
+                    baza_date.actualizeaza_telegram_companie(companie_id, tg_val)
+                    st.success("Telegram Chat ID salvat!")
+                    if test_tg and tg_val.strip():
+                        import notificari
+                        ok_t = notificari.trimite_notificare_telegram(
+                            "TEST/2026", "Client Test", "Portal LexPulse Pro",
+                            {
+                                "tip_solutie": "Conexiune activă",
+                                "noul_termen": "Configurat cu succes",
+                                "cale_atac": "N/A",
+                                "sarcini_avocat": "Vei primi aici toate minutele și termenele noi.",
+                                "mesaj_client": "Alertare activată pentru cabinetul dumneavoastră."
+                            },
+                            chat_id_destinatar=tg_val.strip()
                         )
-                        st.link_button("💳 Mergi la Plata Securizată Stripe", session.url, use_container_width=True)
-                    except Exception as e:
-                        st.error(f"Eroare Stripe: {e}")
+                        if ok_t:
+                            st.info("Mesaj Telegram trimis!")
+                        else:
+                            st.error("Pornește mai întâi o conversație (/start) cu botul LexPulse pe Telegram.")
 
-        with c_p2:
-            st.markdown("""
-                <div class="metric-card">
-                    <div class="metric-title">SOCIETATE PRO</div>
-                    <div class="metric-value">349 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
-                    <p style="font-size:13px;color:#475569;margin-top:8px;">
-                        • Până la <strong>150 dosare</strong> active<br/>
-                        • Verificare automată 3x/zi<br/>
-                        • Rapoarte PDF + Export registru
-                    </p>
-                </div>
-            """, unsafe_allow_html=True)
-            if st.button("Activează Pro (349 RON)", use_container_width=True):
-                if not stripe_key:
-                    st.warning("Configurează STRIPE_SECRET_KEY în Secrets pentru a activa plățile live.")
-                else:
-                    try:
-                        session = stripe.checkout.Session.create(
-                            line_items=[{
-                                "price_data": {
-                                    "currency": "ron",
-                                    "product_data": {"name": "LexPulse Pro — Plan Societate Pro (150 dosare)"},
-                                    "unit_amount": 34900,
-                                    "recurring": {"interval": "month"},
-                                },
-                                "quantity": 1,
-                            }],
-                            mode="subscription",
-                            customer_email=user["email"],
-                            metadata={"companie_id": str(companie_id), "plan": "pro", "limita": "150"},
-                            success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
-                            cancel_url=app_url,
+    with col_em:
+        with st.container(border=True):
+            st.markdown("#### 📧 Alertare Email")
+            st.caption("Primește rapoartele procedurale direct pe emailul cabinetului.")
+            raw_em = str(detalii_comp.get("email_notificari") or "")
+            default_em = raw_em if "@" in raw_em else user["email"]
+            with st.form("form_email_settings", border=False):
+                em_val = st.text_input(
+                    "Email notificări cabinet",
+                    value=default_em,
+                    placeholder="notificari@cabinet-avocat.ro"
+                )
+                c_save_em, c_test_em = st.columns(2)
+                with c_save_em:
+                    save_em = st.form_submit_button("Salvează Email", use_container_width=True)
+                with c_test_em:
+                    test_em = st.form_submit_button("Trimite Email Test", use_container_width=True)
+
+                if save_em or test_em:
+                    baza_date.actualizeaza_email_companie(companie_id, em_val)
+                    st.success("Adresa de email salvată!")
+                    if test_em and em_val.strip():
+                        import notificari
+                        ok_e = notificari.trimite_notificare_email(
+                            em_val.strip(), "TEST/2026", "Client Test", "Portal LexPulse Pro",
+                            {
+                                "tip_solutie": "Conexiune Email Activă",
+                                "noul_termen": "Configurat cu succes",
+                                "sarcini_avocat": "Vei primi aici toate minutele și termenele noi.",
+                                "mesaj_client": "Alertare pe email activată pentru cabinetul dumneavoastră."
+                            }
                         )
-                        st.link_button("💳 Mergi la Plata Securizată Stripe", session.url, use_container_width=True)
-                    except Exception as e:
-                        st.error(f"Eroare Stripe: {e}")
+                        if ok_e:
+                            st.info("Email de test trimis! Verifică Inbox-ul.")
+                        else:
+                            st.error("Verifică dacă RESEND_API_KEY este salvat în Secrets.")
+
+    st.write("")
+    st.write("---")
+
+    # --- RÂNDUL 2: PLANURI & FACTURARE (2 CARDURI EGALE PE TOATĂ LĂȚIMEA) ---
+    st.subheader("💎 Planuri & Facturare")
+    exp_txt = f" | **Valabil până la:** `{detalii_comp['data_expirare']}`" if detalii_comp.get("data_expirare") else ""
+    st.markdown(f"**Plan curent:** `{detalii_comp['plan'].upper()}` | **Limită activă:** `{detalii_comp['limita_dosare']} dosare`{exp_txt}")
+    st.write("")
+
+    app_url = "https://lexpulse-pro.streamlit.app"
+    c_p1, c_p2 = st.columns(2, gap="large")
+
+    with c_p1:
+        st.markdown("""
+            <div class="metric-card" style="min-height: 175px;">
+                <div class="metric-title">CABINET STARTER</div>
+                <div class="metric-value">149 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
+                <p style="font-size:13px;color:#475569;margin-top:10px;line-height:1.6;">
+                    • Până la <strong>30 dosare</strong> active<br/>
+                    • Verificare automată zilnică Portal Just<br/>
+                    • Analiză AI + Alerte Telegram, Email & Calendar
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("Activează Starter (149 RON)", use_container_width=True):
+            if not stripe_key:
+                st.warning("Configurează STRIPE_SECRET_KEY în Secrets pentru a activa plățile live.")
+            else:
+                try:
+                    session = stripe.checkout.Session.create(
+                        line_items=[{
+                            "price_data": {
+                                "currency": "ron",
+                                "product_data": {"name": "LexPulse Pro — Plan Cabinet Starter (30 dosare)"},
+                                "unit_amount": 14900,
+                                "recurring": {"interval": "month"},
+                            },
+                            "quantity": 1,
+                        }],
+                        mode="subscription",
+                        customer_email=user["email"],
+                        metadata={"companie_id": str(companie_id), "plan": "starter", "limita": "30"},
+                        success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
+                        cancel_url=app_url,
+                    )
+                    st.link_button("💳 Mergi la Plata Securizată Stripe", session.url, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Eroare Stripe: {e}")
+
+    with c_p2:
+        st.markdown("""
+            <div class="metric-card" style="min-height: 175px;">
+                <div class="metric-title">SOCIETATE PRO</div>
+                <div class="metric-value">349 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
+                <p style="font-size:13px;color:#475569;margin-top:10px;line-height:1.6;">
+                    • Până la <strong>150 dosare</strong> active<br/>
+                    • Verificare automată de 3x/zi<br/>
+                    • Rapoarte PDF executive + Export registru
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("Activează Pro (349 RON)", use_container_width=True):
+            if not stripe_key:
+                st.warning("Configurează STRIPE_SECRET_KEY în Secrets pentru a activa plățile live.")
+            else:
+                try:
+                    session = stripe.checkout.Session.create(
+                        line_items=[{
+                            "price_data": {
+                                "currency": "ron",
+                                "product_data": {"name": "LexPulse Pro — Plan Societate Pro (150 dosare)"},
+                                "unit_amount": 34900,
+                                "recurring": {"interval": "month"},
+                            },
+                            "quantity": 1,
+                        }],
+                        mode="subscription",
+                        customer_email=user["email"],
+                        metadata={"companie_id": str(companie_id), "plan": "pro", "limita": "150"},
+                        success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
+                        cancel_url=app_url,
+                    )
+                    st.link_button("💳 Mergi la Plata Securizată Stripe", session.url, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Eroare Stripe: {e}")
