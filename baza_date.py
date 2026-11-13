@@ -308,7 +308,7 @@ def obtine_detalii_companie(companie_id):
         "id": row[0],
         "nume_firma": row[1],
         "email": row[2],
-        "telegram_chat_id": row[3],
+        "telegram_chat_id": row[3], "email_notificari": row[4] if len(row) > 4 else "",
         "plan": row[4],
         "limita_dosare": int(row[5] or 2),
         "status_abonament": row[6],
@@ -368,3 +368,11 @@ def obtine_utilizator_dupa_email(email: str):
     if not row:
         return None
     return {"id": row[0], "email": row[1], "nume_complet": row[2], "companie_id": row[3], "nume_cabinet": row[4]}
+
+
+def actualizeaza_email_companie(companie_id: int, email_notificari: str):
+    conn = conectare()
+    c = conn.cursor()
+    c.execute("UPDATE companii SET email_notificari = ? WHERE id = ?", (email_notificari.strip(), companie_id))
+    conn.commit()
+    conn.close()

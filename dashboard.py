@@ -11,7 +11,7 @@ import streamlit as st
 import pandas as pd
 import stripe
 
-for k in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DATABASE_URL", "STRIPE_SECRET_KEY"]:
+for k in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DATABASE_URL", "STRIPE_SECRET_KEY", "RESEND_API_KEY", "RESEND_FROM_EMAIL"]:
     if k in st.secrets and not os.environ.get(k):
         os.environ[k] = str(st.secrets[k])
 
@@ -766,6 +766,40 @@ elif meniu == "💳 Setări & Abonament":
                         st.info("Mesaj de test trimis! Verifică telefonul.")
                     else:
                         st.error("Nu s-a putut trimite. Pornește mai întâi o conversație (/start) cu botul LexPulse pe Telegram.")
+
+        st.write("---")
+        st.subheader("📧 Alertare Email Cabinet (Resend)")
+        st.caption("Primește minutele și termenele noi direct pe emailul cabinetului.")
+        with st.form("form_email_settings"):
+            em_val = st.text_input(
+                "Email notificări cabinet",
+                value=detalii_comp.get("email_notificari") or user["email"],
+                placeholder="notificari@cabinet-avocat.ro"
+            )
+            c_save_em, c_test_em = st.columns(2)
+            with c_save_em:
+                save_em = st.form_submit_button("Salvează Email", use_container_width=True)
+            with c_test_em:
+                test_em = st.form_submit_button("Trimite Email Test", use_container_width=True)
+
+            if save_em or test_em:
+                baza_date.actualizeaza_email_companie(companie_id, em_val)
+                st.success("Adresa de email pentru notificări a fost salvată!")
+                if test_em and em_val.strip():
+                    import notificari
+                    ok_e = notificari.trimite_notificare_email(
+                        em_val.strip(), "TEST/2026", "Client Test", "Portal LexPulse Pro",
+                        {
+                            "tip_solutie": "Conexiune Email Activă",
+                            "noul_termen": "Configurat cu succes",
+                            "sarcini_avocat": "Vei primi aici toate minutele și termenele noi.",
+                            "mesaj_client": "Alertare pe email activată pentru cabinetul dumneavoastră."
+                        }
+                    )
+                    if ok_e:
+                        st.info("Email de test trimis! Verifică Inbox-ul (sau Spam).")
+                    else:
+                        st.error("Nu s-a putut trimite. Verifică dacă RESEND_API_KEY este salvat în Secrets.")
 
     with col_plan:
         st.subheader("💎 Planuri & Facturare")

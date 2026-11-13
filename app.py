@@ -192,6 +192,8 @@ def sincronizeaza_toate_dosarele(companie_id=None):
                     det_comp = baza_date.obtine_detalii_companie(comp_id)
                     chat_dest = det_comp.get("telegram_chat_id", "") if det_comp else ""
                     if chat_dest:
+                        if detalii_c and detalii_c.get('email_notificari'):
+                            notificari.trimite_notificare_email(detalii_c['email_notificari'], numar_dosar, nume_client, institutie, analiza)
                         notificari.trimite_notificare_telegram(numar, client, inst_str, analiza, chat_id_destinatar=chat_dest)
                 except Exception as te:
                     ULTIMELE_ERORI.append(f"{numar} (Telegram): {te}")
