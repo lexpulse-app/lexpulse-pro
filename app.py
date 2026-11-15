@@ -38,7 +38,6 @@ def formateaza_nume_institutie(raw_inst: str) -> str:
     for pref, frumos in inlocuiri_prefix:
         if txt.startswith(pref):
             rest = txt[len(pref):].strip()
-            # Transformă UPPERCASE în Title Case păstrând cratimele (ex: SECTORUL1 -> Sectorul 1, CLUJNAPOCA -> Cluj-Napoca)
             rest = re.sub(r"([A-ZĂÂÎȘȚ])(\d+)", r"\1 \2", rest)
             rest_title = " ".join(w.capitalize() for w in rest.split())
             diacritice_orase = {
@@ -221,6 +220,18 @@ Răspunde STRICT cu un obiect JSON valid, fără text în afara acoladelor:
         return {"_eroare": str(e)}
 
 
+def _sterge_alerte_vechi_dosar(companie_id: int, numar_dosar: str):
+    """Elimină analizele anterioare ale aceluiași dosar pentru a păstra doar varianta finală."""
+    try:
+        conn = baza_date.conectare()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM alerte WHERE companie_id = ? AND numar_dosar = ?", (companie_id, numar_dosar))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Avertisment ștergere alerte vechi: {e}")
+
+
 ULTIMELE_ERORI = []
 
 
@@ -308,6 +319,9 @@ def _proceseaza_un_dosar(comp_id, numar, client, ultima_minuta_db, forteaza_rean
                 sarcini_extinse = f"[{prio_tag}] {sarcini_extinse} | Cale atac: {cale_atac_txt}"
             else:
                 sarcini_extinse = f"[{prio_tag}] {sarcini_extinse}"
+
+            if forteaza_reanaliza:
+                _sterge_alerte_vechi_dosar(comp_id, numar)
 
             baza_date.salveaza_alerta(
                 comp_id,
