@@ -568,7 +568,10 @@ def incarca_alerte_firma():
     WHERE a.companie_id = ? 
     ORDER BY a.id DESC
     """
-    return _query_df(query, (companie_id,))
+    df_a = _query_df(query, (companie_id,))
+    if not df_a.empty and "numar_dosar" in df_a.columns:
+        df_a = df_a.drop_duplicates(subset=["numar_dosar"], keep="first")
+    return df_a
 
 
 def _afiseaza_paywall_upgrade(companie_id: int, user_email: str, stripe_key: str):
