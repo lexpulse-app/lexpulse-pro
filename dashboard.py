@@ -551,10 +551,13 @@ def _query_df(sql, params=()):
 
 
 def incarca_dosare_firma():
-    return _query_df(
+    df_res = _query_df(
         "SELECT * FROM dosare WHERE activ = 1 AND companie_id = ? ORDER BY id DESC",
         (companie_id,)
     )
+    if not df_res.empty and "institutie" in df_res.columns:
+        df_res["institutie"] = df_res["institutie"].apply(lambda x: app.formateaza_nume_institutie(str(x or "")))
+    return df_res
 
 
 def incarca_alerte_firma():
@@ -951,6 +954,7 @@ elif meniu == "⚖️ Triaj & Analiză AI":
             prio_cls = "prio-urgent" if prio_code == "URGENT" else ("prio-important" if prio_code == "IMPORTANT" else "prio-istoric")
             prio_lbl = "🔴 URGENT" if prio_code == "URGENT" else ("🟡 IMPORTANT" if prio_code == "IMPORTANT" else "⚪ ISTORIC")
             noul_t = row["noul_termen"] if row["noul_termen"] and str(row["noul_termen"]).lower() != "null" else "Fără termen stabilit"
+            inst_frumos = app.formateaza_nume_institutie(row.get("institutie", "Instanță"))
 
             st.markdown(f"""
                 <div class="ai-card">
@@ -958,7 +962,7 @@ elif meniu == "⚖️ Triaj & Analiză AI":
                         <div>
                             <span class="dosar-tag">{row['numar_dosar']}</span>
                             <span style="margin-left: 10px; font-weight: 600; font-size: 14px; color: #0F172A;">
-                                {row.get('institutie', 'Instanță')}
+                                {inst_frumos}
                             </span>
                             <span style="margin-left: 8px; font-size: 13px; color: #64748B;">
                                 {('• ' + row['nume_client']) if row.get('nume_client') else ''}
@@ -996,13 +1000,13 @@ elif meniu == "⚖️ Triaj & Analiză AI":
                 label_btn = "📲 WhatsApp Client"
 
             link_gcal = calendar_sync.genereaza_link_google_calendar(
-                row["numar_dosar"], row.get("institutie", "Instanță"), noul_t, sarcini_curate
+                row["numar_dosar"], inst_frumos, noul_t, sarcini_curate
             )
             ics_bytes = calendar_sync.genereaza_fisier_ics(
-                row["numar_dosar"], row.get("institutie", "Instanță"), noul_t, sarcini_curate
+                row["numar_dosar"], inst_frumos, noul_t, sarcini_curate
             )
 
-            c_wa, c_pdf, c_gcal, c_ical = st.columns([1.5, 1.4, 1.3, 1.3])
+            c_wa, c_pdf, c_gcal, c_ical, c_reai = st.columns([1.3, 1.2, 1.2, 1.2, 1.1])
 
             with c_wa:
                 st.link_button(label_btn, link_wa, use_container_width=True)
@@ -1018,13 +1022,13 @@ elif meniu == "⚖️ Triaj & Analiză AI":
                     firma_nume=user["nume_firma"],
                     numar_dosar=row["numar_dosar"],
                     client_nume=row.get("nume_client", ""),
-                    institutie=row.get("institutie", "Instanță"),
+                    institutie=inst_frumos,
                     stadiu=row.get("stadiu", "Fond"),
                     solutie_sumar=row.get("ultima_minuta", row.get("mesaj_client", "")),
                     analiza=analiza_dict
                 )
                 st.download_button(
-                    label="📄 Fișă PDF Client",
+                    label="📄 Fișă PDF",
                     data=pdf_bytes,
                     file_name=f"Errata_Fisa_{row['numar_dosar'].replace('/', '_')}.pdf",
                     key=f"btn_pdf_{idx}_{row.get('id', idx)}",
@@ -1034,19 +1038,28 @@ elif meniu == "⚖️ Triaj & Analiză AI":
 
             with c_gcal:
                 if link_gcal:
-                    st.link_button("🌐 Google Calendar", link_gcal, use_container_width=True)
+                    st.link_button("🌐 Google Cal", link_gcal, use_container_width=True)
                 else:
-                    st.button("🌐 Google Calendar", disabled=True, use_container_width=True, help="Fără termen viitor consemnat", key=f"btn_gcal_dis_{idx}_{row.get('id', idx)}")
+                    st.button("🌐 Google Cal", disabled=True, use_container_width=True, help="Fără termen viitor consemnat", key=f"btn_gcal_dis_{idx}_{row.get('id', idx)}")
 
             with c_ical:
                 st.download_button(
-                    label="📅 Apple / Outlook (.ics)",
+                    label="📅 Apple (.ics)",
                     data=ics_bytes,
                     file_name=f"Termen_{row['numar_dosar'].replace('/', '_')}.ics",
                     key=f"btn_ics_{idx}_{row.get('id', idx)}",
                     mime="text/calendar",
                     use_container_width=True
                 )
+
+            with c_reai:
+                if st.button("🔄 Re-analizează", key=f"btn_reai_{idx}_{row.get('id', idx)}", use_container_width=True, help="Regenerează analiza juridică cu noul motor AI"):
+                    with st.spinner("Se reanalizează dosarul..."):
+                        ok_r, err_r = app.reanalizeaza_dosar_individual(companie_id, row["numar_dosar"])
+                    if ok_r:
+                        st.rerun()
+                    elif err_r:
+                        st.error(err_r)
             st.write("")
 
         if afisate == 0:
