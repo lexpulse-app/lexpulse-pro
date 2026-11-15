@@ -8,6 +8,7 @@ import urllib.parse
 from datetime import datetime, timedelta
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import stripe
 
@@ -20,23 +21,86 @@ import app
 import export_pdf
 import calendar_sync
 
+# Pictogramă oficială Errata (SVG Data URI pentru Favicon, PWA iOS/Android și UI)
+ERRATA_ICON_SVG = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'>"
+    "<rect width='512' height='512' rx='112' fill='#0F172A'/>"
+    "<rect x='18' y='18' width='476' height='476' rx='98' fill='none' stroke='#C5A059' stroke-width='6' stroke-opacity='0.45'/>"
+    "<text x='256' y='345' text-anchor='middle' font-family='Georgia, serif' font-weight='bold' font-size='290' fill='#E2C792'>E</text>"
+    "<path d='M145 275 Q256 235 367 215' stroke='#C5A059' stroke-width='10' fill='none' stroke-linecap='round'/>"
+    "<polygon points='145,275 128,312 162,312' fill='#E2C792'/>"
+    "<polygon points='367,215 350,252 384,252' fill='#E2C792'/>"
+    "</svg>"
+)
+ERRATA_ICON_DATA_URI = "data:image/svg+xml;utf8," + urllib.parse.quote(ERRATA_ICON_SVG)
+
 st.set_page_config(
-    page_title="LexPulse Pro | Enterprise Legal Intelligence",
-    page_icon="⚖️",
+    page_title="Errata | Asistent Juridic & Monitorizare Dosare",
+    page_icon=ERRATA_ICON_DATA_URI,
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Injectare PWA Manifest & Apple Touch Icon pentru instalare pe telefon (Adaugă pe ecranul principal)
+components.html(f"""
+<script>
+(function() {{
+    const doc = window.parent.document;
+    if (!doc.querySelector("link[rel='apple-touch-icon']")) {{
+        const appleIcon = doc.createElement('link');
+        appleIcon.rel = 'apple-touch-icon';
+        appleIcon.href = "{ERRATA_ICON_DATA_URI}";
+        doc.head.appendChild(appleIcon);
+    }}
+    if (!doc.querySelector("meta[name='apple-mobile-web-app-capable']")) {{
+        const metaCap = doc.createElement('meta');
+        metaCap.name = 'apple-mobile-web-app-capable';
+        metaCap.content = 'yes';
+        doc.head.appendChild(metaCap);
+
+        const metaTitle = doc.createElement('meta');
+        metaTitle.name = 'apple-mobile-web-app-title';
+        metaTitle.content = 'Errata';
+        doc.head.appendChild(metaTitle);
+
+        const metaTheme = doc.createElement('meta');
+        metaTheme.name = 'theme-color';
+        metaTheme.content = '#0F172A';
+        doc.head.appendChild(metaTheme);
+    }}
+    if (!doc.querySelector("link[rel='manifest']")) {{
+        const manifest = {{
+            name: "Errata — Asistent Juridic",
+            short_name: "Errata",
+            start_url: "/",
+            display: "standalone",
+            background_color: "#0F172A",
+            theme_color: "#0F172A",
+            icons: [{{ src: "{ERRATA_ICON_DATA_URI}", sizes: "512x512", type: "image/svg+xml" }}]
+        }};
+        const blob = new Blob([JSON.stringify(manifest)], {{type: 'application/json'}});
+        const link = doc.createElement('link');
+        link.rel = 'manifest';
+        link.href = URL.createObjectURL(blob);
+        doc.head.appendChild(link);
+    }}
+}})();
+</script>
+""", height=0, width=0)
+
 
 @st.cache_resource
 def _init_db_once():
     baza_date.init_db()
     return True
 
+
 _init_db_once()
 
-# ----------------- PERSISTENȚĂ SESIUNE 30 ZILE (HMAC TOKEN ÎN URL) -----------------
+
+# ----------------- PERSISTENȚĂ SESIUNE 30 ZILE -----------------
 def _gen_session_token(user_dict: dict) -> str:
-    secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
+    secret = (os.getenv("DATABASE_URL") or "errata_secret_salt_2026").encode()
     exp = int(_time_mod.time()) + 30 * 86400
     raw_payload = json.dumps({
         "id": user_dict["id"],
@@ -48,12 +112,13 @@ def _gen_session_token(user_dict: dict) -> str:
     sig = hmac.new(secret, b64.encode(), hashlib.sha256).hexdigest()[:24]
     return f"{b64}.{sig}"
 
+
 def _verify_session_token(token: str):
     try:
         if not token or "." not in token:
             return None
         b64, sig = token.rsplit(".", 1)
-        secret = (os.getenv("DATABASE_URL") or "lexpulse_secret_salt").encode()
+        secret = (os.getenv("DATABASE_URL") or "errata_secret_salt_2026").encode()
         expected = hmac.new(secret, b64.encode(), hashlib.sha256).hexdigest()[:24]
         if not hmac.compare_digest(sig, expected):
             return None
@@ -64,21 +129,23 @@ def _verify_session_token(token: str):
     except Exception:
         return None
 
+
 if "utilizator" not in st.session_state:
     st.session_state.utilizator = None
 
-# Restaurare automată la refresh dacă există ?session=... valid
 if not st.session_state.utilizator and "session" in st.query_params:
     restored_user = _verify_session_token(st.query_params["session"])
     if restored_user:
         st.session_state.utilizator = restored_user
         st.session_state.keep_logged_in = True
 
+
 def deconectare():
     st.session_state.utilizator = None
     st.session_state.keep_logged_in = False
     st.query_params.pop("session", None)
     st.rerun()
+
 
 def formateaza_telefon_whatsapp(telefon_raw):
     if not telefon_raw:
@@ -88,10 +155,23 @@ def formateaza_telefon_whatsapp(telefon_raw):
         return "4" + curat
     return curat
 
-# ----------------- DESIGN SYSTEM / CUSTOM CSS -----------------
+
+def extrage_prioritate_alerta(row):
+    sarcini = str(row.get("sarcini_avocat") or "")
+    if sarcini.startswith("[URGENT]"):
+        return "URGENT", sarcini.replace("[URGENT]", "", 1).strip()
+    if sarcini.startswith("[ISTORIC]"):
+        return "ISTORIC", sarcini.replace("[ISTORIC]", "", 1).strip()
+    if sarcini.startswith("[IMPORTANT]"):
+        return "IMPORTANT", sarcini.replace("[IMPORTANT]", "", 1).strip()
+    prio = app.clasifica_prioritate_fallback(str(row.get("tip_solutie") or ""), sarcini)
+    return prio, sarcini
+
+
+# ----------------- DESIGN SYSTEM ERRATA (BLEUMARIN & AURIU-ȘAMPANIE) -----------------
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:wght@700&display=swap');
 
     html, body, [class*="css"] {
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -100,20 +180,21 @@ st.markdown("""
     .stApp {
         background-color: #F8FAFC;
     }
-    
+
     .block-container {
-        padding-top: 2rem !important;
+        padding-top: 1.8rem !important;
         padding-bottom: 3rem !important;
-        max-width: 1250px !important;
+        max-width: 1280px !important;
     }
 
     .exec-header {
         background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
         padding: 24px 32px;
-        border-radius: 14px;
+        border-radius: 16px;
+        border-bottom: 3px solid #C5A059;
         color: #FFFFFF;
         margin-bottom: 24px;
-        box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.08);
+        box-shadow: 0 12px 24px -6px rgba(15, 23, 42, 0.14);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -127,8 +208,8 @@ st.markdown("""
     }
     .exec-header p {
         font-size: 13px;
-        color: #94A3B8;
-        margin: 4px 0 0 0;
+        color: #CBD5E1;
+        margin: 5px 0 0 0;
     }
 
     .metric-container {
@@ -139,39 +220,41 @@ st.markdown("""
     }
     .metric-card {
         background: #FFFFFF;
-        padding: 18px 20px;
-        border-radius: 12px;
+        padding: 18px 22px;
+        border-radius: 14px;
         border: 1px solid #E2E8F0;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+        border-top: 3px solid #0F172A;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     .metric-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 12px -2px rgba(0, 0, 0, 0.06);
+        box-shadow: 0 8px 16px -4px rgba(15, 23, 42, 0.08);
     }
     .metric-title {
         font-size: 11px;
         text-transform: uppercase;
         font-weight: 700;
-        letter-spacing: 0.06em;
+        letter-spacing: 0.07em;
         color: #64748B;
         margin-bottom: 6px;
     }
     .metric-value {
         font-size: 26px;
-        font-weight: 700;
+        font-weight: 800;
         color: #0F172A;
         letter-spacing: -0.03em;
     }
     .metric-badge-live {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        background: #ECFDF5;
-        color: #059669;
+        gap: 7px;
+        background: rgba(226, 199, 146, 0.14);
+        color: #E2C792;
+        border: 1px solid rgba(226, 199, 146, 0.35);
         font-weight: 600;
-        font-size: 13px;
-        padding: 4px 10px;
+        font-size: 12px;
+        padding: 6px 13px;
         border-radius: 20px;
     }
     .dot-live {
@@ -179,116 +262,148 @@ st.markdown("""
         height: 8px;
         background: #10B981;
         border-radius: 50%;
-        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
     }
 
     .ai-card {
         background: #FFFFFF;
         border-radius: 14px;
         border: 1px solid #E2E8F0;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.04);
+        box-shadow: 0 4px 10px -2px rgba(15, 23, 42, 0.04);
         padding: 24px;
-        margin-bottom: 24px;
+        margin-bottom: 18px;
     }
     .ai-card-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
         border-bottom: 1px solid #F1F5F9;
         padding-bottom: 14px;
         margin-bottom: 16px;
     }
     .dosar-tag {
         font-family: monospace;
-        background: #F1F5F9;
-        color: #0F172A;
+        background: #0F172A;
+        color: #E2C792;
         font-weight: 700;
         font-size: 14px;
-        padding: 5px 10px;
-        border-radius: 6px;
-        border: 1px solid #CBD5E1;
+        padding: 5px 11px;
+        border-radius: 7px;
     }
-    .solutie-tag {
-        font-size: 12px;
-        font-weight: 600;
-        padding: 5px 12px;
+    .prio-urgent {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 4px 11px;
         border-radius: 20px;
         background: #FEF2F2;
         color: #DC2626;
         border: 1px solid #FCA5A5;
     }
+    .prio-important {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 4px 11px;
+        border-radius: 20px;
+        background: #FFFBEB;
+        color: #B45309;
+        border: 1px solid #FCD34D;
+    }
+    .prio-istoric {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 4px 11px;
+        border-radius: 20px;
+        background: #F1F5F9;
+        color: #475569;
+        border: 1px solid #CBD5E1;
+    }
 
     .client-box {
         background: #F8FAFC;
-        border-left: 4px solid #3B82F6;
-        padding: 16px 20px;
+        border-left: 4px solid #0F172A;
+        padding: 15px 18px;
         border-radius: 0 10px 10px 0;
         font-size: 14px;
         line-height: 1.6;
         color: #1E293B;
-        margin: 16px 0;
+        margin: 12px 0 4px 0;
     }
     .sarcini-box {
-        background: #FFFBEB;
-        border-left: 4px solid #F59E0B;
+        background: #FAF8F5;
+        border-left: 4px solid #C5A059;
         padding: 14px 18px;
-        border-radius: 0 8px 8px 0;
-        font-size: 13px;
-        color: #78350F;
-        margin-bottom: 16px;
-        line-height: 1.5;
+        border-radius: 0 10px 10px 0;
+        font-size: 13.5px;
+        color: #1E293B;
+        margin-bottom: 14px;
+        line-height: 1.55;
     }
 
     div.stButton > button:first-child {
         background: #0F172A;
-        color: #FFFFFF;
-        border-radius: 8px;
-        padding: 8px 18px;
+        color: #E2C792;
+        border-radius: 9px;
+        padding: 9px 18px;
         font-weight: 600;
-        border: none;
+        border: 1px solid #1E293B;
         transition: all 0.2s ease;
     }
     div.stButton > button:first-child:hover {
         background: #1E293B;
         color: #FFFFFF;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
     }
 
     a[kind="secondary"] {
-        background: #10B981 !important;
+        background: #0F172A !important;
         color: #FFFFFF !important;
         border: none !important;
-        border-radius: 8px !important;
+        border-radius: 9px !important;
         font-weight: 600 !important;
     }
     a[kind="secondary"]:hover {
-        background: #059669 !important;
-        color: #FFFFFF !important;
-        box-shadow: 0 4px 10px rgba(16, 185, 129, 0.25) !important;
+        background: #1E293B !important;
+        color: #E2C792 !important;
     }
 
     [data-testid="stSidebar"] {
         background-color: #0F172A;
+        border-right: 1px solid #1E293B;
     }
     [data-testid="stSidebar"] * {
         color: #F1F5F9 !important;
     }
     [data-testid="stSidebar"] hr {
-        border-color: #334155 !important;
+        border-color: #1E293B !important;
+    }
+
+    @media (max-width: 768px) {
+        .metric-container {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .exec-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 12px;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ----------------- ECRAN AUTENTIFICARE / ÎNREGISTRARE -----------------
 if not st.session_state.utilizator:
-    st.markdown("""
-        <div style='text-align: center; margin-top: 50px; margin-bottom: 25px;'>
-            <h1 style='color: #0F172A; font-weight: 800; font-size: 32px; letter-spacing: -0.03em;'>⚖️ LexPulse Pro</h1>
-            <p style='color: #64748B; font-size: 15px;'>Enterprise Legal Operations & Case Intelligence Platform</p>
+    st.markdown(f"""
+        <div style='text-align: center; margin-top: 36px; margin-bottom: 24px;'>
+            <img src="{ERRATA_ICON_DATA_URI}" width="68" height="68" style="border-radius: 16px; box-shadow: 0 8px 20px rgba(15,23,42,0.18); margin-bottom: 12px;" />
+            <h1 style='font-family: "Playfair Display", Georgia, serif; color: #0F172A; font-weight: 700; font-size: 36px; margin: 0; letter-spacing: -0.02em;'>Errata</h1>
+            <p style='color: #C5A059; font-size: 11px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; margin: 4px 0 8px 0;'>ASISTENT JURIDIC</p>
+            <p style='color: #64748B; font-size: 14px;'>Securitate. Integritate. Rapiditate. — Monitorizare inteligentă Portal Just</p>
         </div>
     """, unsafe_allow_html=True)
 
-    _, col_centru, _ = st.columns([1, 1.4, 1])
+    _, col_centru, _ = st.columns([1, 1.35, 1])
     with col_centru:
         tab_login, tab_inregistrare = st.tabs(["🔐 Conectare Cabinet", "📝 Deschide Cont Nou"])
 
@@ -297,7 +412,7 @@ if not st.session_state.utilizator:
                 email_login = st.text_input("Email profesional", placeholder="avocat@societate.ro")
                 parola_login = st.text_input("Parolă securizată", type="password")
                 remember_me = st.checkbox("Ține-mă minte (30 zile)", value=True, key="chk_remember_me")
-                btn_login = st.form_submit_button("Autentificare în Portal", use_container_width=True)
+                btn_login = st.form_submit_button("Autentificare în Errata", use_container_width=True)
 
                 if btn_login:
                     user = baza_date.autentifica_utilizator(email_login, parola_login)
@@ -317,7 +432,7 @@ if not st.session_state.utilizator:
                 email_nou = st.text_input("Email administrator", placeholder="contact@societate.ro")
                 parola_noua = st.text_input("Parolă cont (minim 8 caractere)", type="password")
                 acord_gdpr = st.checkbox("Accept Termenii de Utilizare și Politica de Confidențialitate (GDPR)")
-                btn_reg = st.form_submit_button("Creează Cont Societate (Trial Gratuit)", use_container_width=True)
+                btn_reg = st.form_submit_button("Creează Cont Cabinet (Trial Gratuit)", use_container_width=True)
 
                 if btn_reg:
                     if not (firma_noua and email_nou and parola_noua):
@@ -337,18 +452,25 @@ if not st.session_state.utilizator:
 # ----------------- ECRAN PRINCIPAL DUPĂ LOGIN -----------------
 user = st.session_state.utilizator
 companie_id = user["id"]
+APP_PUBLIC_URL = "https://app.errata.ro"
 
-# Menținem ?session=... sincronizat în URL pe durata navigării și la întoarcerea din Stripe
 if st.session_state.get("keep_logged_in", True):
     tok_curent = _gen_session_token(user)
     if "session" not in st.query_params:
         st.query_params["session"] = tok_curent
 
 st.sidebar.markdown(f"""
-    <div style='padding: 8px 0 16px 0;'>
-        <div style='font-size: 11px; text-transform: uppercase; color: #94A3B8; font-weight: 700; letter-spacing: 0.05em;'>PORTAL ACTIV</div>
-        <div style='font-size: 18px; font-weight: 700; color: #FFFFFF;'>{user['nume_firma']}</div>
-        <div style='font-size: 12px; color: #64748B;'>{user['email']}</div>
+    <div style='padding: 6px 0 14px 0; display: flex; align-items: center; gap: 12px;'>
+        <img src="{ERRATA_ICON_DATA_URI}" width="42" height="42" style="border-radius: 10px; border: 1px solid #C5A05955;" />
+        <div>
+            <div style='font-family: "Playfair Display", Georgia, serif; font-size: 20px; font-weight: 700; color: #E2C792 !important; line-height: 1.1;'>Errata</div>
+            <div style='font-size: 10px; letter-spacing: 0.14em; color: #94A3B8 !important; text-transform: uppercase;'>ASISTENT JURIDIC</div>
+        </div>
+    </div>
+    <div style='background: #1E293B; padding: 10px 12px; border-radius: 10px; margin-bottom: 12px;'>
+        <div style='font-size: 10px; text-transform: uppercase; color: #94A3B8 !important; font-weight: 700;'>CABINET ACTIV</div>
+        <div style='font-size: 15px; font-weight: 700; color: #FFFFFF !important;'>{user['nume_firma']}</div>
+        <div style='font-size: 11px; color: #CBD5E1 !important;'>{user['email']}</div>
     </div>
 """, unsafe_allow_html=True)
 
@@ -360,7 +482,6 @@ detalii_comp = baza_date.obtine_detalii_companie(companie_id) or {
     "plan": "trial", "limita_dosare": 2, "telegram_chat_id": "", "status_abonament": "active", "data_expirare": ""
 }
 
-# Procesare automată revenire din Stripe Checkout (?stripe_session=...)
 stripe_key = os.getenv("STRIPE_SECRET_KEY", "").strip()
 if stripe_key:
     stripe.api_key = stripe_key
@@ -390,8 +511,6 @@ if stripe_key:
             st.query_params.pop("stripe_session", None)
             st.warning(f"Verificare plată în curs: {se}")
 
-
-# Verificare automata reinnoire / anulare abonament Stripe (fara intoarcere la trial)
 if stripe_key and detalii_comp.get("plan") not in ("trial", "enterprise", "expirat"):
     sub_id = baza_date.obtine_subscription_id_companie(companie_id)
     if sub_id:
@@ -405,21 +524,21 @@ if stripe_key and detalii_comp.get("plan") not in ("trial", "enterprise", "expir
             pass
 
 st.sidebar.markdown(
-    f"<div style='background:#1E293B;padding:10px 12px;border-radius:8px;margin-bottom:12px;font-size:12px;'>"
-    f"Plan activ: <strong style='color:#38BDF8;'>{detalii_comp['plan'].upper()}</strong><br/>"
-    f"Limită portofoliu: <strong>{detalii_comp['limita_dosare']} dosare</strong>"
+    f"<div style='background:#1E293B;padding:10px 12px;border-radius:10px;margin-bottom:12px;font-size:12px;border-left:3px solid #C5A059;'>"
+    f"Plan activ: <strong style='color:#E2C792 !important;'>{detalii_comp['plan'].upper()}</strong><br/>"
+    f"Capacitate: <strong>{detalii_comp['limita_dosare']} dosare</strong>"
     f"</div>",
     unsafe_allow_html=True
 )
 
-
 if detalii_comp.get("plan") == "expirat":
-    st.error("⚠️ Abonamentul acestui cabinet a expirat sau a fost anulat. Perioada de trial nu mai este disponibilă — activează un plan **Starter** sau **Pro** din secțiunea **💳 Setări & Abonament** pentru a relua monitorizarea și adăugarea dosarelor.")
+    st.error("⚠️ Abonamentul acestui cabinet a expirat sau a fost anulat. Activează un plan **Starter** sau **Pro** din **💳 Setări & Abonament** pentru a relua monitorizarea.")
 
 meniu = st.sidebar.radio(
     "Navigare",
-    ["📊 Panou Monitorizare", "📥 Import & Adăugare", "⚖️ Soluții & Analiză AI", "💳 Setări & Abonament"]
+    ["📊 Panou Monitorizare", "📥 Import & Căutare Portal", "⚖️ Triaj & Analiză AI", "💳 Setări & Abonament"]
 )
+
 
 def _query_df(sql, params=()):
     conn = baza_date.conectare()
@@ -430,11 +549,13 @@ def _query_df(sql, params=()):
     conn.close()
     return pd.DataFrame(rows, columns=cols)
 
+
 def incarca_dosare_firma():
     return _query_df(
         "SELECT * FROM dosare WHERE activ = 1 AND companie_id = ? ORDER BY id DESC",
         (companie_id,)
     )
+
 
 def incarca_alerte_firma():
     query = """
@@ -446,12 +567,12 @@ def incarca_alerte_firma():
     """
     return _query_df(query, (companie_id,))
 
+
 def _afiseaza_paywall_upgrade(companie_id: int, user_email: str, stripe_key: str):
-    app_url = "https://lexpulse-pro.streamlit.app"
     st.markdown("""
-        <div style="background:#FFFBEB;border:1px solid #F59E0B;border-radius:12px;padding:16px 20px;margin:14px 0;">
-            <strong style="color:#92400E;font-size:15px;">🚀 Deblochează capacitate extinsă pentru cabinetul tău</strong><br/>
-            <span style="color:#78350F;font-size:13px;">Alege unul dintre planurile comerciale de mai jos pentru a continua adăugarea dosarelor instant:</span>
+        <div style="background:#FAF8F5;border:1px solid #C5A059;border-radius:12px;padding:16px 20px;margin:14px 0;">
+            <strong style="color:#0F172A;font-size:15px;">🚀 Extinde capacitatea portofoliului în Errata</strong><br/>
+            <span style="color:#475569;font-size:13px;">Alege unul dintre planurile dedicate cabinetelor de avocatură pentru a adăuga dosare nelimitat în limita planului:</span>
         </div>
     """, unsafe_allow_html=True)
     cp1, cp2 = st.columns(2, gap="large")
@@ -460,10 +581,10 @@ def _afiseaza_paywall_upgrade(companie_id: int, user_email: str, stripe_key: str
             <div class="metric-card" style="min-height: 165px;">
                 <div class="metric-title">CABINET STARTER</div>
                 <div class="metric-value">149 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
-                <p style="font-size:13px;color:#475569;margin-top:8px;line-height:1.5;">
+                <p style="font-size:13px;color:#475569;margin-top:8px;line-height:1.55;">
                     • Până la <strong>30 dosare</strong> active<br/>
-                    • Verificare zilnică Portal Just<br/>
-                    • Analiză AI + Telegram, Email & Calendar
+                    • Triaj AI (Urgent / Important / Istoric)<br/>
+                    • Alerte pe <code>alerte@errata.ro</code>, Telegram & Calendar
                 </p>
             </div>
         """, unsafe_allow_html=True)
@@ -476,7 +597,7 @@ def _afiseaza_paywall_upgrade(companie_id: int, user_email: str, stripe_key: str
                         line_items=[{
                             "price_data": {
                                 "currency": "ron",
-                                "product_data": {"name": "LexPulse Pro — Plan Cabinet Starter (30 dosare)"},
+                                "product_data": {"name": "Errata — Plan Cabinet Starter (30 dosare)"},
                                 "unit_amount": 14900,
                                 "recurring": {"interval": "month"},
                             },
@@ -485,8 +606,8 @@ def _afiseaza_paywall_upgrade(companie_id: int, user_email: str, stripe_key: str
                         mode="subscription",
                         customer_email=user_email,
                         metadata={"companie_id": str(companie_id), "plan": "starter", "limita": "30"},
-                        success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
-                        cancel_url=app_url,
+                        success_url=f"{APP_PUBLIC_URL}?stripe_session={{CHECKOUT_SESSION_ID}}",
+                        cancel_url=APP_PUBLIC_URL,
                     )
                     st.link_button("💳 Mergi la Plata Securizată Stripe", sess.url, use_container_width=True)
                 except Exception as e:
@@ -497,9 +618,9 @@ def _afiseaza_paywall_upgrade(companie_id: int, user_email: str, stripe_key: str
             <div class="metric-card" style="min-height: 165px;">
                 <div class="metric-title">SOCIETATE PRO</div>
                 <div class="metric-value">349 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
-                <p style="font-size:13px;color:#475569;margin-top:8px;line-height:1.5;">
+                <p style="font-size:13px;color:#475569;margin-top:8px;line-height:1.55;">
                     • Până la <strong>150 dosare</strong> active<br/>
-                    • Verificare automată de 3x/zi<br/>
+                    • Căutare masivă după nume parte + Import lot<br/>
                     • Rapoarte PDF executive + Export registru
                 </p>
             </div>
@@ -513,7 +634,7 @@ def _afiseaza_paywall_upgrade(companie_id: int, user_email: str, stripe_key: str
                         line_items=[{
                             "price_data": {
                                 "currency": "ron",
-                                "product_data": {"name": "LexPulse Pro — Plan Societate Pro (150 dosare)"},
+                                "product_data": {"name": "Errata — Plan Societate Pro (150 dosare)"},
                                 "unit_amount": 34900,
                                 "recurring": {"interval": "month"},
                             },
@@ -522,12 +643,13 @@ def _afiseaza_paywall_upgrade(companie_id: int, user_email: str, stripe_key: str
                         mode="subscription",
                         customer_email=user_email,
                         metadata={"companie_id": str(companie_id), "plan": "pro", "limita": "150"},
-                        success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
-                        cancel_url=app_url,
+                        success_url=f"{APP_PUBLIC_URL}?stripe_session={{CHECKOUT_SESSION_ID}}",
+                        cancel_url=APP_PUBLIC_URL,
                     )
                     st.link_button("💳 Mergi la Plata Securizată Stripe", sess.url, use_container_width=True)
                 except Exception as e:
                     st.error(f"Eroare Stripe: {e}")
+
 
 # VEDERE 1: Panou Monitorizare
 if meniu == "📊 Panou Monitorizare":
@@ -535,63 +657,81 @@ if meniu == "📊 Panou Monitorizare":
         <div class="exec-header">
             <div>
                 <h1>Panou Executiv — {user['nume_firma']}</h1>
-                <p>Sistem automat de supraveghere a instanțelor și sumarizare decizională</p>
+                <p>Supraveghere automată Portal Just, triaj procedural și generare termene</p>
             </div>
             <div>
                 <span class="metric-badge-live"><span class="dot-live"></span> Portal Just Conectat</span>
             </div>
         </div>
     """, unsafe_allow_html=True)
-    
+
     df = incarca_dosare_firma()
     df_alerte = incarca_alerte_firma()
-    
+
     nr_dosare = len(df)
-    nr_alerte = len(df_alerte)
+    nr_urgente = sum(1 for _, r in df_alerte.iterrows() if extrage_prioritate_alerta(r)[0] == "URGENT") if not df_alerte.empty else 0
     nr_instante = df["institutie"].nunique() if not df.empty and "institutie" in df else 0
-    
+
     st.markdown(f"""
         <div class="metric-container">
             <div class="metric-card">
-                <div class="metric-title">Portofoliu Activ</div>
-                <div class="metric-value">{nr_dosare}</div>
+                <div class="metric-title">Dosare Monitorizate</div>
+                <div class="metric-value">{nr_dosare} <span style="font-size:13px;color:#64748B;font-weight:500;">/ {detalii_comp['limita_dosare']}</span></div>
+            </div>
+            <div class="metric-card" style="border-top-color: #DC2626;">
+                <div class="metric-title">Alerte Urgente</div>
+                <div class="metric-value" style="color: {'#DC2626' if nr_urgente > 0 else '#0F172A'};">{nr_urgente}</div>
             </div>
             <div class="metric-card">
-                <div class="metric-title">Minute Procesate</div>
-                <div class="metric-value">{nr_alerte}</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-title">Instanțe Monitorizate</div>
+                <div class="metric-title">Instanțe Active</div>
                 <div class="metric-value">{nr_instante}</div>
             </div>
-            <div class="metric-card">
-                <div class="metric-title">Protocol Criptare</div>
-                <div class="metric-value" style="font-size: 18px; color: #10B981; padding-top: 6px;">AES-256 / WSDL</div>
+            <div class="metric-card" style="border-top-color: #C5A059;">
+                <div class="metric-title">Canale Alertare</div>
+                <div class="metric-value" style="font-size: 16px; color: #0F172A; padding-top: 7px;">Email • Telegram • .ICS</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
-    
-    col_btn, _ = st.columns([1.8, 3.5])
+
+    col_btn, col_exp, _ = st.columns([1.8, 1.5, 2.5])
     with col_btn:
-        if st.button("🚀 Declanșează Sincronizare Acum", use_container_width=True):
-            with st.spinner("Se interoghează baza centralizată Portal Just..."):
+        if st.button("🚀 Sincronizează Acum", use_container_width=True):
+            with st.spinner("Se interoghează Portal Just și se analizează minutele..."):
                 nr_gasite = app.sincronizeaza_toate_dosarele(companie_id)
             if getattr(app, "ULTIMELE_ERORI", None):
                 for er in app.ULTIMELE_ERORI:
                     st.error(er)
             else:
-                st.success(f"Sincronizare finalizată! ({nr_gasite} actualizări recepționate)")
+                st.success(f"Sincronizare finalizată! ({nr_gasite} actualizări noi detectate)")
                 st.rerun()
 
-    st.write("")
     if not df.empty:
-        cautare = st.text_input("🔍 Căutare rapidă după număr dosar sau client", "")
+        with col_exp:
+            csv_data = df[["numar_dosar", "nume_client", "institutie", "obiect", "stadiu", "ultima_minuta"]].to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "📥 Export Registru CSV",
+                data=csv_data,
+                file_name=f"Registru_Errata_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        c1_f, c2_f = st.columns([2.5, 1.5])
+        with c1_f:
+            cautare = st.text_input("🔍 Căutare rapidă după număr dosar, client sau obiect", "")
+        with c2_f:
+            instante_list = ["Toate instanțele"] + sorted([i for i in df["institutie"].dropna().unique() if str(i).strip()])
+            filtru_inst = st.selectbox("🏛️ Filtrează după instanță", instante_list)
+
         df_filtrat = df.copy()
         if cautare:
             df_filtrat = df_filtrat[
                 df_filtrat["numar_dosar"].str.contains(cautare, case=False, na=False) |
-                df_filtrat["nume_client"].str.contains(cautare, case=False, na=False)
+                df_filtrat["nume_client"].str.contains(cautare, case=False, na=False) |
+                df_filtrat["obiect"].str.contains(cautare, case=False, na=False)
             ]
+        if filtru_inst != "Toate instanțele":
+            df_filtrat = df_filtrat[df_filtrat["institutie"] == filtru_inst]
 
         afisaj = df_filtrat[[
             "numar_dosar", "nume_client", "institutie", "obiect", "stadiu", "ultima_minuta"
@@ -601,42 +741,44 @@ if meniu == "📊 Panou Monitorizare":
             "institutie": "Instanță",
             "obiect": "Obiect",
             "stadiu": "Stadiu",
-            "ultima_minuta": "Ultima Soluție Publicată"
+            "ultima_minuta": "Ultima Minută / Stadiu"
         })
-        st.dataframe(afisaj, use_container_width=True)
+        st.dataframe(afisaj, use_container_width=True, hide_index=True)
 
-        # --- GESTIONARE SI ELIMINARE DOSAR ---
-        st.write('')
+        st.write("")
         c_del1, c_del2 = st.columns([3, 1])
         with c_del1:
-            lista_stergere = df['numar_dosar'].tolist() if 'numar_dosar' in df.columns else []
-            dosar_ales_del = st.selectbox('🗑️ Elimină un dosar din monitorizare:', lista_stergere if lista_stergere else ['Niciun dosar'])
+            lista_stergere = df["numar_dosar"].tolist() if "numar_dosar" in df.columns else []
+            dosar_ales_del = st.selectbox("🗑️ Elimină un dosar din monitorizare:", lista_stergere if lista_stergere else ["Niciun dosar"])
         with c_del2:
-            st.write('')
-            st.write('')
-            if st.button('Șterge Dosar', type='primary'):
-                if dosar_ales_del and dosar_ales_del != 'Niciun dosar':
+            st.write("")
+            st.write("")
+            if st.button("Șterge Dosar", use_container_width=True):
+                if dosar_ales_del and dosar_ales_del != "Niciun dosar":
                     baza_date.sterge_dosar(companie_id, dosar_ales_del)
-                    st.success(f'Dosarul {dosar_ales_del} a fost eliminat!')
+                    st.success(f"Dosarul {dosar_ales_del} a fost eliminat!")
                     st.rerun()
-        # -------------------------------------
-
     else:
-        st.info("Portofoliul firmei este gol. Utilizați 'Import & Adăugare' pentru primele cauze.")
+        st.info("Portofoliul este gol. Folosește **📥 Import & Căutare Portal** pentru a adăuga dosare individual, prin listă sau după numele clientului.")
 
-# VEDERE 2: Import & Adăugare
-elif meniu == "📥 Import & Adăugare":
+# VEDERE 2: Import & Căutare Portal
+elif meniu == "📥 Import & Căutare Portal":
     st.markdown("""
         <div class="exec-header">
             <div>
-                <h1>Înregistrare Dosare în Monitorizare</h1>
-                <p>Adăugare individuală sau preluare masivă din registrul intern al cabinetului</p>
+                <h1>Import Dosare & Căutare Portal Just</h1>
+                <p>Adăugare individuală, import în lot (Copy-Paste / Excel) sau căutare automată după numele clientului</p>
             </div>
         </div>
     """, unsafe_allow_html=True)
-    
-    tab1, tab2 = st.tabs(["Adăugare Dosar Individual", "📂 Import Masiv Registru (Excel / CSV)"])
-    
+
+    tab1, tab_parte, tab_paste, tab2 = st.tabs([
+        "➕ Dosar Individual",
+        "🔎 Căutare după Nume Parte",
+        "📋 Import Rapid (Copy-Paste)",
+        "📂 Import Registru (Excel / CSV)"
+    ])
+
     with tab1:
         with st.form("form_add"):
             c_nr, c_cl = st.columns(2)
@@ -645,8 +787,8 @@ elif meniu == "📥 Import & Adăugare":
             with c_cl:
                 cl = st.text_input("Client reprezentat", placeholder="ex: SC Apex Logistics SRL")
             ct = st.text_input("Număr contact client (WhatsApp)", placeholder="ex: 0722123456")
-            
-            salveaza = st.form_submit_button("Înregistrează Cauza în Supraveghere")
+
+            salveaza = st.form_submit_button("Înregistrează Dosarul în Errata")
             if salveaza:
                 permis, nr_crt, lim_max = baza_date.verifica_limita_dosare(companie_id)
                 if not nr.strip():
@@ -656,28 +798,84 @@ elif meniu == "📥 Import & Adăugare":
                     st.error(f"Ai atins limita planului curent ({nr_crt}/{lim_max} dosare).")
                 else:
                     rez_add = baza_date.adauga_dosar(companie_id, nr, cl, ct)
-                    ok_add, msg_add = rez_add if isinstance(rez_add, tuple) else (rez_add, "Operațiune finalizată.")
+                    ok_add, msg_add = rez_add if isinstance(rez_add, tuple) else (rez_add, "Dosar adăugat.")
                     if ok_add:
                         st.success(msg_add)
                     else:
                         st.warning(msg_add)
-        permis_acum, _, _ = baza_date.verifica_limita_dosare(companie_id)
-        if st.session_state.get("arata_paywall_import") or not permis_acum:
-            _afiseaza_paywall_upgrade(companie_id, user["email"], stripe_key)
+
+    with tab_parte:
+        st.caption("Caută direct în baza Portal Just toate dosarele în care apare numele unui client sau al unei societăți.")
+        with st.form("form_cauta_parte"):
+            nume_cautat = st.text_input("Nume parte / Societate *", placeholder="ex: SC Apex Logistics SRL sau Popescu Ion")
+            btn_cauta_p = st.form_submit_button("Caută în Portal Just")
+            if btn_cauta_p:
+                if len(nume_cautat.strip()) < 3:
+                    st.error("Introdu cel puțin 3 caractere pentru căutare.")
+                else:
+                    with st.spinner("Se interoghează Portal Just..."):
+                        st.session_state["rezultate_parte"] = app.cauta_dosare_dupa_parte(nume_cautat)
+                        st.session_state["client_parte_cautat"] = nume_cautat.strip()
+
+        rez_p = st.session_state.get("rezultate_parte")
+        if rez_p is not None:
+            if not rez_p:
+                st.warning("Nu au fost găsite dosare pentru acest nume pe Portal Just.")
+            else:
+                st.success(f"Au fost găsite {len(rez_p)} dosare:")
+                optiuni_p = {f"{r['numar_dosar']} — {r['institutie']} ({r['obiect']})": r for r in rez_p}
+                selectate = st.multiselect("Selectează dosarele pe care dorești să le importezi în Errata:", list(optiuni_p.keys()))
+                if st.button("Importă Dosarele Selectate", key="btn_imp_parte"):
+                    imp_ok = 0
+                    for key_sel in selectate:
+                        permis, _, _ = baza_date.verifica_limita_dosare(companie_id)
+                        if not permis:
+                            st.warning("Import oprit la atingerea limitei de dosare a planului.")
+                            break
+                        item_p = optiuni_p[key_sel]
+                        rez_a = baza_date.adauga_dosar(
+                            companie_id,
+                            item_p["numar_dosar"],
+                            st.session_state.get("client_parte_cautat", ""),
+                            ""
+                        )
+                        if (rez_a[0] if isinstance(rez_a, tuple) else rez_a):
+                            imp_ok += 1
+                    st.success(f"Au fost importate {imp_ok} dosare în portofoliu!")
+
+    with tab_paste:
+        st.caption("Lipește o listă de numere de dosar (câte unul pe linie sau separate prin virgulă) pentru import instant.")
+        lista_bruta = st.text_area("Listă numere de dosar", height=160, placeholder="1234/2/2025\n5678/3/2025\n9101/300/2026")
+        client_lot = st.text_input("Etichetă Client comună (opțional)", placeholder="ex: Portofoliu Banca X")
+        if st.button("Importă Lista de Dosare"):
+            linii = [x.strip() for x in lista_bruta.replace(",", "\n").replace(";", "\n").splitlines() if x.strip()]
+            if not linii:
+                st.error("Introdu cel puțin un număr de dosar.")
+            else:
+                count_p = 0
+                for nr_item in linii:
+                    permis, _, _ = baza_date.verifica_limita_dosare(companie_id)
+                    if not permis:
+                        st.warning("Import oprit la atingerea limitei de dosare a planului.")
+                        break
+                    rez_l = baza_date.adauga_dosar(companie_id, nr_item, client_lot.strip(), "")
+                    if (rez_l[0] if isinstance(rez_l, tuple) else rez_l):
+                        count_p += 1
+                st.success(f"Au fost importate cu succes {count_p} dosare!")
 
     with tab2:
-        st.write("Încărcați un registru electronic existent (`.xlsx` sau `.csv`):")
+        st.write("Încarcă un registru electronic existent (`.xlsx` sau `.csv`):")
         fisier = st.file_uploader("Selectează fișierul", type=["xlsx", "csv"])
         if fisier is not None:
             try:
                 df_up = pd.read_csv(fisier) if fisier.name.endswith(".csv") else pd.read_excel(fisier)
                 st.dataframe(df_up.head(4), use_container_width=True)
-                
+
                 cols = df_up.columns.tolist()
                 col_dos = st.selectbox("Coloană Număr Dosar:", cols)
                 col_nume = st.selectbox("Coloană Nume Client (opțional):", ["-- Fără --"] + cols)
                 col_tel = st.selectbox("Coloană Telefon / WhatsApp (opțional):", ["-- Fără --"] + cols)
-                
+
                 if st.button("Inițiază Importul Masiv"):
                     count = 0
                     oprit_limita = False
@@ -701,56 +899,84 @@ elif meniu == "📥 Import & Adăugare":
             except Exception as ex:
                 st.error(f"Eroare procesare fișier: {ex}")
 
-# VEDERE 3: Feed Alerte & AI
-elif meniu == "⚖️ Soluții & Analiză AI":
+    permis_acum, _, _ = baza_date.verifica_limita_dosare(companie_id)
+    if st.session_state.get("arata_paywall_import") or not permis_acum:
+        _afiseaza_paywall_upgrade(companie_id, user["email"], stripe_key)
+
+# VEDERE 3: Triaj & Analiză AI
+elif meniu == "⚖️ Triaj & Analiză AI":
     st.markdown("""
         <div class="exec-header">
             <div>
-                <h1>Flux Decizional & Inteligență Juridică</h1>
-                <p>Minute procesate automat, aprecieri procedurale, export fișă și sincronizare calendar</p>
+                <h1>Triaj Procedural & Inteligență Juridică</h1>
+                <p>Clasificare automată Urgent / Important / Istoric, fișe PDF și sincronizare calendar</p>
             </div>
         </div>
     """, unsafe_allow_html=True)
-    
+
     df_alerte = incarca_alerte_firma()
-    
+
     if not df_alerte.empty:
-        conn_sel = baza_date.conectare()
-        c_sel = conn_sel.cursor()
-        c_sel.execute('SELECT numar_dosar, nume_client FROM dosare WHERE companie_id = ?', (companie_id,))
-        dosare_disponibile = c_sel.fetchall()
-        conn_sel.close()
-        if dosare_disponibile:
-            map_nume = {f'{nr} - {cl}': nr for nr, cl in dosare_disponibile}
-            ales_key = st.selectbox('📌 Selectează Dosarul pentru Analiză AI & Strategie:', list(map_nume.keys()))
+        c_filt1, c_filt2 = st.columns([2, 1.5])
+        with c_filt1:
+            conn_sel = baza_date.conectare()
+            c_sel = conn_sel.cursor()
+            c_sel.execute("SELECT numar_dosar, nume_client FROM dosare WHERE companie_id = ?", (companie_id,))
+            dosare_disponibile = c_sel.fetchall()
+            conn_sel.close()
+            map_nume = {"Toate dosarele din portofoliu": None}
+            for nr, cl in dosare_disponibile:
+                map_nume[f"{nr} — {cl or 'Fără client'}"] = nr
+            ales_key = st.selectbox("📌 Filtrează după dosar:", list(map_nume.keys()))
             nr_ales = map_nume[ales_key]
-            df_alerte_lucru = df_alerte[df_alerte['numar_dosar'] == nr_ales] if ('numar_dosar' in df_alerte.columns and not df_alerte[df_alerte['numar_dosar'] == nr_ales].empty) else df_alerte
-        else:
-            df_alerte_lucru = df_alerte
+
+        with c_filt2:
+            filtru_prio = st.selectbox("🚦 Nivel urgență procedurală:", ["Toate nivelurile", "🔴 URGENT", "🟡 IMPORTANT", "⚪ ISTORIC"])
+
+        df_alerte_lucru = df_alerte.copy()
+        if nr_ales:
+            df_alerte_lucru = df_alerte_lucru[df_alerte_lucru["numar_dosar"] == nr_ales]
+
+        afisate = 0
         for idx, row in df_alerte_lucru.iterrows():
-            noul_t = row['noul_termen'] if row['noul_termen'] and str(row['noul_termen']).lower() != "null" else "Fără termen stabilit"
-            
+            prio_code, sarcini_curate = extrage_prioritate_alerta(row)
+            if filtru_prio == "🔴 URGENT" and prio_code != "URGENT":
+                continue
+            if filtru_prio == "🟡 IMPORTANT" and prio_code != "IMPORTANT":
+                continue
+            if filtru_prio == "⚪ ISTORIC" and prio_code != "ISTORIC":
+                continue
+
+            afisate += 1
+            prio_cls = "prio-urgent" if prio_code == "URGENT" else ("prio-important" if prio_code == "IMPORTANT" else "prio-istoric")
+            prio_lbl = "🔴 URGENT" if prio_code == "URGENT" else ("🟡 IMPORTANT" if prio_code == "IMPORTANT" else "⚪ ISTORIC")
+            noul_t = row["noul_termen"] if row["noul_termen"] and str(row["noul_termen"]).lower() != "null" else "Fără termen stabilit"
+
             st.markdown(f"""
                 <div class="ai-card">
                     <div class="ai-card-header">
                         <div>
                             <span class="dosar-tag">{row['numar_dosar']}</span>
-                            <span style="margin-left: 10px; font-weight: 600; font-size: 14px; color: #475569;">
-                                {row.get('institutie', 'Curtea de Apel')}
+                            <span style="margin-left: 10px; font-weight: 600; font-size: 14px; color: #0F172A;">
+                                {row.get('institutie', 'Instanță')}
+                            </span>
+                            <span style="margin-left: 8px; font-size: 13px; color: #64748B;">
+                                {('• ' + row['nume_client']) if row.get('nume_client') else ''}
                             </span>
                         </div>
-                        <div>
-                            <span class="solutie-tag">{row['tip_solutie']}</span>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <span class="{prio_cls}">{prio_lbl}</span>
+                            <span class="prio-istoric" style="background:#0F172A;color:#E2C792;border:none;">{row['tip_solutie']}</span>
                         </div>
                     </div>
-                    <div style="font-size: 13px; color: #64748B; margin-bottom: 12px;">
-                        <strong>Următorul Eveniment Procedural:</strong> <span style="color: #0F172A; font-weight: 600;">{noul_t}</span>
+                    <div style="font-size: 13px; color: #475569; margin-bottom: 12px;">
+                        <strong>Următorul Eveniment Procedural:</strong> <span style="color: #0F172A; font-weight: 700;">{noul_t}</span>
                     </div>
                     <div class="sarcini-box">
-                        <strong>📌 Evaluare Procedurală & Termene:</strong><br/>
-                        {row['sarcini_avocat']}
+                        <strong>📌 Evaluare Procedurală & Sarcini Cabinet:</strong><br/>
+                        {sarcini_curate}
                     </div>
-                    <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-top: 14px;">
+                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748B; margin-top: 12px;">
                         Notificare Client Pre-Generată:
                     </div>
                     <div class="client-box">
@@ -758,49 +984,49 @@ elif meniu == "⚖️ Soluții & Analiză AI":
                     </div>
                 </div>
             """, unsafe_allow_html=True)
-            
-            tel_formatat = formateaza_telefon_whatsapp(row.get('contact_client'))
-            mesaj_codificat = urllib.parse.quote(row['mesaj_client'])
-            
+
+            tel_formatat = formateaza_telefon_whatsapp(row.get("contact_client"))
+            mesaj_codificat = urllib.parse.quote(row["mesaj_client"])
+
             if tel_formatat:
                 link_wa = f"https://wa.me/{tel_formatat}?text={mesaj_codificat}"
                 label_btn = f"📲 WhatsApp ({row.get('nume_client', 'Client')})"
             else:
                 link_wa = f"https://wa.me/?text={mesaj_codificat}"
-                label_btn = "📲 WhatsApp (Alege destinatar)"
-            
+                label_btn = "📲 WhatsApp Client"
+
             link_gcal = calendar_sync.genereaza_link_google_calendar(
-                row['numar_dosar'], row.get('institutie', 'Instanță'), noul_t, row['sarcini_avocat']
+                row["numar_dosar"], row.get("institutie", "Instanță"), noul_t, sarcini_curate
             )
             ics_bytes = calendar_sync.genereaza_fisier_ics(
-                row['numar_dosar'], row.get('institutie', 'Instanță'), noul_t, row['sarcini_avocat']
+                row["numar_dosar"], row.get("institutie", "Instanță"), noul_t, sarcini_curate
             )
 
             c_wa, c_pdf, c_gcal, c_ical = st.columns([1.5, 1.4, 1.3, 1.3])
-            
+
             with c_wa:
                 st.link_button(label_btn, link_wa, use_container_width=True)
-                
+
             with c_pdf:
                 analiza_dict = {
-                    "tip_solutie": row['tip_solutie'],
-                    "noul_termen": row['noul_termen'],
-                    "sarcini_avocat": row['sarcini_avocat'],
-                    "mesaj_client": row['mesaj_client']
+                    "tip_solutie": row["tip_solutie"],
+                    "noul_termen": row["noul_termen"],
+                    "sarcini_avocat": sarcini_curate,
+                    "mesaj_client": row["mesaj_client"]
                 }
                 pdf_bytes = export_pdf.genereaza_raport_dosar_pdf(
-                    firma_nume=user['nume_firma'],
-                    numar_dosar=row['numar_dosar'],
-                    client_nume=row.get('nume_client', ''),
-                    institutie=row.get('institutie', 'Curtea de Apel'),
-                    stadiu=row.get('stadiu', 'Fond'),
-                    solutie_sumar=row.get('ultima_minuta', row.get('mesaj_client', '')),
+                    firma_nume=user["nume_firma"],
+                    numar_dosar=row["numar_dosar"],
+                    client_nume=row.get("nume_client", ""),
+                    institutie=row.get("institutie", "Instanță"),
+                    stadiu=row.get("stadiu", "Fond"),
+                    solutie_sumar=row.get("ultima_minuta", row.get("mesaj_client", "")),
                     analiza=analiza_dict
                 )
                 st.download_button(
-                    label="📄 Fișă PDF",
+                    label="📄 Fișă PDF Client",
                     data=pdf_bytes,
-                    file_name=f"Fisa_{row['numar_dosar'].replace('/', '_')}.pdf",
+                    file_name=f"Errata_Fisa_{row['numar_dosar'].replace('/', '_')}.pdf",
                     key=f"btn_pdf_{idx}_{row.get('id', idx)}",
                     mime="application/pdf",
                     use_container_width=True
@@ -814,7 +1040,7 @@ elif meniu == "⚖️ Soluții & Analiză AI":
 
             with c_ical:
                 st.download_button(
-                    label="📅 Apple Calendar",
+                    label="📅 Apple / Outlook (.ics)",
                     data=ics_bytes,
                     file_name=f"Termen_{row['numar_dosar'].replace('/', '_')}.ics",
                     key=f"btn_ics_{idx}_{row.get('id', idx)}",
@@ -822,28 +1048,30 @@ elif meniu == "⚖️ Soluții & Analiză AI":
                     use_container_width=True
                 )
             st.write("")
+
+        if afisate == 0:
+            st.info("Nicio alertă nu corespunde filtrului selectat.")
     else:
-        st.info("Nu există alerte generate pentru această firmă până acum.")
+        st.info("Nu există alerte generate încă. Apasă **Sincronizează Acum** din Panoul de Monitorizare.")
 
 # VEDERE 4: Setări & Abonament
 elif meniu == "💳 Setări & Abonament":
     st.markdown("""
         <div class="exec-header">
             <div>
-                <h1>Configurare Notificări & Abonament SaaS</h1>
-                <p>Canale automate de alertare pentru cabinet și administrare plan comercial</p>
+                <h1>Configurare Alertare & Abonament Errata</h1>
+                <p>Canale automate de notificare pentru cabinet și administrare plan</p>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-    # --- RÂNDUL 1: CANALE DE NOTIFICARE (2 COLOANE EGALE) ---
     st.subheader("🔔 Canale de Alertare Automată")
     col_tg, col_em = st.columns(2, gap="large")
 
     with col_tg:
         with st.container(border=True):
-            st.markdown("#### 📲 Alertare Telegram")
-            st.caption("Primește instant minutele și termenele noi pe Telegram.")
+            st.markdown("#### 📲 Alertare Instant Telegram")
+            st.caption("Primește instant pronunțările și termenele noi pe Telegram.")
             with st.form("form_tg_settings", border=False):
                 tg_val = st.text_input(
                     "Telegram Chat ID",
@@ -863,8 +1091,9 @@ elif meniu == "💳 Setări & Abonament":
                     if test_tg and tg_val.strip():
                         import notificari
                         ok_t = notificari.trimite_notificare_telegram(
-                            "TEST/2026", "Client Test", "Portal LexPulse Pro",
+                            "TEST/2026", "Client Test", "Portal Errata",
                             {
+                                "prioritate": "URGENT",
                                 "tip_solutie": "Conexiune activă",
                                 "noul_termen": "Configurat cu succes",
                                 "cale_atac": "N/A",
@@ -876,12 +1105,12 @@ elif meniu == "💳 Setări & Abonament":
                         if ok_t:
                             st.info("Mesaj Telegram trimis!")
                         else:
-                            st.error("Pornește mai întâi o conversație (/start) cu botul LexPulse pe Telegram.")
+                            st.error("Pornește mai întâi o conversație (/start) cu botul pe Telegram.")
 
     with col_em:
         with st.container(border=True):
-            st.markdown("#### 📧 Alertare Email")
-            st.caption("Primește rapoartele procedurale direct pe emailul cabinetului.")
+            st.markdown("#### 📧 Alertare Email Oficială (`alerte@errata.ro`)")
+            st.caption("Primește rapoartele procedurale structurate direct pe emailul cabinetului.")
             raw_em = str(detalii_comp.get("email_notificari") or "")
             default_em = raw_em if "@" in raw_em else user["email"]
             with st.form("form_email_settings", border=False):
@@ -902,29 +1131,27 @@ elif meniu == "💳 Setări & Abonament":
                     if test_em and em_val.strip():
                         import notificari
                         ok_e = notificari.trimite_notificare_email(
-                            em_val.strip(), "TEST/2026", "Client Test", "Portal LexPulse Pro",
+                            em_val.strip(), "TEST/2026", "Client Test", "Portal Errata",
                             {
-                                "tip_solutie": "Conexiune Email Activă",
+                                "prioritate": "URGENT",
+                                "tip_solutie": "Conexiune Email Errata Activă",
                                 "noul_termen": "Configurat cu succes",
-                                "sarcini_avocat": "Vei primi aici toate minutele și termenele noi.",
+                                "cale_atac": "N/A",
+                                "sarcini_avocat": "Vei primi aici toate minutele și termenele noi de pe alerte@errata.ro.",
                                 "mesaj_client": "Alertare pe email activată pentru cabinetul dumneavoastră."
                             }
                         )
                         if ok_e:
-                            st.info("Email de test trimis! Verifică Inbox-ul.")
+                            st.info("Email de test trimis de pe alerte@errata.ro! Verifică Inbox-ul.")
                         else:
-                            st.error("Verifică dacă RESEND_API_KEY este salvat în Secrets.")
+                            st.error("Verifică dacă RESEND_API_KEY este salvat și domeniul errata.ro este Verified în Resend.")
 
-    st.write("")
     st.write("---")
-
-    # --- RÂNDUL 2: PLANURI & FACTURARE (2 CARDURI EGALE PE TOATĂ LĂȚIMEA) ---
     st.subheader("💎 Planuri & Facturare")
     exp_txt = f" | **Valabil până la:** `{detalii_comp['data_expirare']}`" if detalii_comp.get("data_expirare") else ""
     st.markdown(f"**Plan curent:** `{detalii_comp['plan'].upper()}` | **Limită activă:** `{detalii_comp['limita_dosare']} dosare`{exp_txt}")
     st.write("")
 
-    app_url = "https://lexpulse-pro.streamlit.app"
     c_p1, c_p2 = st.columns(2, gap="large")
 
     with c_p1:
@@ -935,7 +1162,7 @@ elif meniu == "💳 Setări & Abonament":
                 <p style="font-size:13px;color:#475569;margin-top:10px;line-height:1.6;">
                     • Până la <strong>30 dosare</strong> active<br/>
                     • Verificare automată zilnică Portal Just<br/>
-                    • Analiză AI + Alerte Telegram, Email & Calendar
+                    • Triaj AI + Alerte <code>alerte@errata.ro</code>, Telegram & Calendar
                 </p>
             </div>
         """, unsafe_allow_html=True)
@@ -948,7 +1175,7 @@ elif meniu == "💳 Setări & Abonament":
                         line_items=[{
                             "price_data": {
                                 "currency": "ron",
-                                "product_data": {"name": "LexPulse Pro — Plan Cabinet Starter (30 dosare)"},
+                                "product_data": {"name": "Errata — Plan Cabinet Starter (30 dosare)"},
                                 "unit_amount": 14900,
                                 "recurring": {"interval": "month"},
                             },
@@ -957,8 +1184,8 @@ elif meniu == "💳 Setări & Abonament":
                         mode="subscription",
                         customer_email=user["email"],
                         metadata={"companie_id": str(companie_id), "plan": "starter", "limita": "30"},
-                        success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
-                        cancel_url=app_url,
+                        success_url=f"{APP_PUBLIC_URL}?stripe_session={{CHECKOUT_SESSION_ID}}",
+                        cancel_url=APP_PUBLIC_URL,
                     )
                     st.link_button("💳 Mergi la Plata Securizată Stripe", session.url, use_container_width=True)
                 except Exception as e:
@@ -971,7 +1198,7 @@ elif meniu == "💳 Setări & Abonament":
                 <div class="metric-value">349 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
                 <p style="font-size:13px;color:#475569;margin-top:10px;line-height:1.6;">
                     • Până la <strong>150 dosare</strong> active<br/>
-                    • Verificare automată de 3x/zi<br/>
+                    • Căutare masivă după nume parte + Import lot<br/>
                     • Rapoarte PDF executive + Export registru
                 </p>
             </div>
@@ -985,7 +1212,7 @@ elif meniu == "💳 Setări & Abonament":
                         line_items=[{
                             "price_data": {
                                 "currency": "ron",
-                                "product_data": {"name": "LexPulse Pro — Plan Societate Pro (150 dosare)"},
+                                "product_data": {"name": "Errata — Plan Societate Pro (150 dosare)"},
                                 "unit_amount": 34900,
                                 "recurring": {"interval": "month"},
                             },
@@ -994,8 +1221,8 @@ elif meniu == "💳 Setări & Abonament":
                         mode="subscription",
                         customer_email=user["email"],
                         metadata={"companie_id": str(companie_id), "plan": "pro", "limita": "150"},
-                        success_url=f"{app_url}?stripe_session={{CHECKOUT_SESSION_ID}}",
-                        cancel_url=app_url,
+                        success_url=f"{APP_PUBLIC_URL}?stripe_session={{CHECKOUT_SESSION_ID}}",
+                        cancel_url=APP_PUBLIC_URL,
                     )
                     st.link_button("💳 Mergi la Plata Securizată Stripe", session.url, use_container_width=True)
                 except Exception as e:
