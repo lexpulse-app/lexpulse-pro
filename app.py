@@ -158,16 +158,42 @@ def clasifica_prioritate_fallback(tip_solutie: str, minuta: str, are_termen_viit
     return "ISTORIC"
 
 
-def analizeaza_cu_claude(numar_dosar, institutie, obiect, stadiu, minuta, client_nume="", parti_dosar="", istoric_sedinte=""):
+def _aplica_semnatura_cabinet(mesaj_client: str, nume_cabinet: str) -> str:
+    """Asigură că mesajul pentru client se încheie întotdeauna cu denumirea exactă a cabinetului din cont."""
+    semnatura = (nume_cabinet or "").strip() or "Echipa dvs. juridică"
+    txt = (mesaj_client or "").strip()
+    if not txt:
+        return f"Bună ziua,\n\nVă informăm că a fost înregistrată o actualizare în dosarul dumneavoastră.\n\nCu respect,\n{semnatura}"
+
+    inlocuiri_generice = [
+        "Cabinetul dvs. de avocatură",
+        "Cabinetul dumneavoastră de avocatură",
+        "Cabinetul de avocatură",
+        "[Numele Cabinetului]",
+        "[Nume Cabinet]"
+    ]
+    for gen in inlocuiri_generice:
+        if gen in txt:
+            txt = txt.replace(gen, semnatura)
+
+    if semnatura not in txt:
+        txt = f"{txt}\n\nCu respect,\n{semnatura}"
+    return txt
+
+
+def analizeaza_cu_claude(numar_dosar, institutie, obiect, stadiu, minuta, client_nume="", parti_dosar="", istoric_sedinte="", nume_cabinet=""):
     global client_ai
     cheie = _get_secret("ANTHROPIC_API_KEY")
     if cheie and (client_ai is None or getattr(client_ai, "api_key", "") != cheie):
         client_ai = Anthropic(api_key=cheie)
 
+    semnatura_cabinet = (nume_cabinet or "").strip() or "Echipa dvs. juridică"
+
     prompt = f"""
 Ești un avocat partener senior din Baroul București, specializat în procedură civilă și penală română, care redactează analize procedurale interne pentru echipa de avocați și informări oficiale către clienți.
 
 DATE DOSAR:
+- Cabinet / Societate de avocatură utilizatoare: {semnatura_cabinet}
 - Număr dosar: {numar_dosar}
 - Instanță: {institutie}
 - Obiect: {obiect or 'Nespecificat'}
@@ -180,13 +206,18 @@ MINUTA / DISPOZIȚIA CURENTĂ DIN PORTAL JUST:
 "{minuta}"
 
 REGULI OBLIGATORII DE ANALIZĂ:
-1. DISTINCȚIE INSTANȚĂ VS. AVOCAT: Nu confunda măsurile dispuse de instanță din oficiu (ex. „comunică intimatului întâmpinarea...”) cu sarcinile avocatului. Tradu efectul procedural în acțiuni concrete pentru avocatul nostru în funcție de calitatea clientului (ex. dacă clientul este Petent/Reclamant și se comunică întâmpinarea către Intimat, sarcina avocatului este să urmărească dovada comunicării la dosar, să verifice dacă intimatul depune întâmpinare în termenul legal de 25 de zile / termenul fixat și să pregătească răspunsul la întâmpinare / notele scrise înainte de următorul termen).
+1. DISTINCȚIE INSTANȚĂ VS. AVOCAT: Nu confunda măsurile dispuse de instanță din oficiu (ex. „comunică intimatului întâmpinarea...”) cu sarcinile avocatului. Tradu efectul procedural în acțiuni concrete pentru avocatul nostru în funcție de calitatea clientului.
 2. CORECTARE ERORI GREFIER: Dacă minuta conține greșeli evidente de redactare ale grefierului (ex. „înregistrarea” în loc de „întâmpinarea” sau „înscrisurile”), interpretează sensul juridic corect fără a propaga eroarea în mesajul către client.
 3. CLASIFICARE PRIORITATE:
-   - "URGENT": pronunțare pe fond/excepții, admitere/respingere, suspendare, perimare, amânare de pronunțare, obligații sub sancțiunea decăderii/amenzii sau curgerea unui termen de cale de atac.
-   - "IMPORTANT": acordare termen de judecată, comunicări de acte procedurale, încuviințare/administrare probe (înscrisuri, martori, expertiză).
-   - "ISTORIC": exclusiv înregistrare inițială fără termen sau modificări pur administrative fără termen viitor.
-4. TONUL MESAJULUI CĂTRE CLIENT: Registru profesionist, calm, clar și politicos de cabinet de avocatură (începe cu „Bună ziua,” sau „Stimate domnule / Stimată doamnă,”, folosește exclusiv persoana a II-a plural „dumneavoastră”, explică pe scurt ce s-a întâmplat la termen, care este următorul pas și data următoarei ședințe, fără formule abrupte de tipul „Bună!” sau „sunați-mă!”).
+  - "URGENT": pronunțare pe fond/excepții, admitere/respingere, suspendare, perimare, amânare de pronunțare, obligații sub sancțiunea decăderii/amenzii sau curgerea unui termen de cale de atac.
+  - "IMPORTANT": acordare termen de judecată, comunicări de acte procedurale, încuviințare/administrare probe (înscrisuri, martori, expertiză).
+  - "ISTORIC": exclusiv înregistrare inițială fără termen sau modificări pur administrative fără termen viitor.
+4. TONUL ȘI SEMNĂTURA MESAJULUI CĂTRE CLIENT:
+  - Registru profesionist, calm, clar și politicos de cabinet de avocatură (începe cu „Bună ziua,”, folosește exclusiv persoana a II-a plural „dumneavoastră”, explică concis ce s-a întâmplat la termen, care este următorul pas și data următoarei ședințe).
+  - OBLIGATORIU încheie mesajul EXACT cu formula:
+    Cu respect,
+    {semnatura_cabinet}
+  - Nu folosi NICIODATĂ formula generică „Cabinetul dvs. de avocatură”.
 
 Răspunde STRICT cu un obiect JSON valid, fără text în afara acoladelor:
 {{
@@ -194,8 +225,8 @@ Răspunde STRICT cu un obiect JSON valid, fără text în afara acoladelor:
   "tip_solutie": "denumirea juridică precisă a măsurii (ex: Amânare judecată — comunicare acte, Amânare pronunțare, Admitere cerere)",
   "noul_termen": "data exactă a noului termen sau pronunțării (ex: 19.11.2026) sau Null dacă nu există",
   "cale_atac": "calea de atac și termenul legal dacă hotărârea este supusă atacului, altfel 'Nu este cazul la acest moment'",
-  "sarcini_avocat": "2-3 pași procedurali concreți pentru avocat, cu referire la termenul următor și calitatea clientului",
-  "mesaj_client": "informare completă, elegantă și clară către client, gata de trimis"
+  "sarcini_avocat": ["pas procedural 1", "pas procedural 2", "pas procedural 3"],
+  "mesaj_client": "informare completă, elegantă și clară către client, semnată exact cu {semnatura_cabinet}"
 }}
 """
     try:
@@ -211,6 +242,11 @@ Răspunde STRICT cu un obiect JSON valid, fără text în afara acoladelor:
         elif "```" in raw:
             raw = raw.split("```")[1].split("```")[0].strip()
         rez = json.loads(raw)
+
+        # Curățăm sarcinile și aplicăm semnătura exactă a cabinetului
+        rez["sarcini_avocat"] = notificari.formateaza_lista_sarcini(rez.get("sarcini_avocat"), separator="\n")
+        rez["mesaj_client"] = _aplica_semnatura_cabinet(rez.get("mesaj_client", ""), semnatura_cabinet)
+
         are_termen = bool(rez.get("noul_termen") and str(rez.get("noul_termen")).lower() != "null")
         if not rez.get("prioritate") or (are_termen and str(rez.get("prioritate")).upper() == "ISTORIC"):
             rez["prioritate"] = clasifica_prioritate_fallback(rez.get("tip_solutie", ""), minuta, are_termen_viitor=are_termen)
@@ -240,6 +276,9 @@ def _proceseaza_un_dosar(comp_id, numar, client, ultima_minuta_db, forteaza_rean
     info = obtine_date_portal(numar)
     if not info:
         return False, f"{numar}: Portal Just nu a returnat date (verifică formatul sau conexiunea WSDL)."
+
+    det_comp = baza_date.obtine_detalii_companie(comp_id) or {}
+    nume_cabinet = str(det_comp.get("nume_firma") or "").strip()
 
     inst_str = formateaza_nume_institutie(str(getattr(info, "institutie", "") or ""))
     obiect_str = str(getattr(info, "obiect", "") or "")
@@ -305,7 +344,8 @@ def _proceseaza_un_dosar(comp_id, numar, client, ultima_minuta_db, forteaza_rean
     if minuta_curenta != ultima_minuta_db or forteaza_reanaliza:
         analiza = analizeaza_cu_claude(
             numar, inst_str, obiect_str, stadiu_str, text_pentru_ai,
-            client_nume=client, parti_dosar=parti_str, istoric_sedinte=istoric_scurt
+            client_nume=client, parti_dosar=parti_str, istoric_sedinte=istoric_scurt,
+            nume_cabinet=nume_cabinet
         )
         if isinstance(analiza, dict) and "_eroare" not in analiza:
             if termen_portal and (not analiza.get("noul_termen") or str(analiza.get("noul_termen")).lower() == "null"):
@@ -313,12 +353,12 @@ def _proceseaza_un_dosar(comp_id, numar, client, ultima_minuta_db, forteaza_rean
 
         if analiza and "_eroare" not in analiza:
             prio_tag = str(analiza.get("prioritate", "IMPORTANT")).upper()
-            sarcini_extinse = analiza.get("sarcini_avocat", "")
+            sarcini_curate = notificari.formateaza_lista_sarcini(analiza.get("sarcini_avocat", ""), separator="\n")
             cale_atac_txt = analiza.get("cale_atac", "")
             if cale_atac_txt and cale_atac_txt.lower() not in ("null", "none", "fără cale de atac", "nu este cazul la acest moment"):
-                sarcini_extinse = f"[{prio_tag}] {sarcini_extinse} | Cale atac: {cale_atac_txt}"
+                sarcini_extinse = f"[{prio_tag}] {sarcini_curate}\n• Cale atac: {cale_atac_txt}"
             else:
-                sarcini_extinse = f"[{prio_tag}] {sarcini_extinse}"
+                sarcini_extinse = f"[{prio_tag}] {sarcini_curate}"
 
             if forteaza_reanaliza:
                 _sterge_alerte_vechi_dosar(comp_id, numar)
@@ -347,7 +387,6 @@ def _proceseaza_un_dosar(comp_id, numar, client, ultima_minuta_db, forteaza_rean
 
             if not forteaza_reanaliza:
                 try:
-                    det_comp = baza_date.obtine_detalii_companie(comp_id) or {}
                     email_dest = str(det_comp.get("email_notificari") or "").strip()
                     chat_dest = str(det_comp.get("telegram_chat_id") or "").strip()
 
