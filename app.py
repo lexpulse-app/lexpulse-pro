@@ -23,6 +23,62 @@ client_ai = Anthropic(api_key=api_key) if api_key else None
 URL_WSDL = "http://portalquery.just.ro/query.asmx?WSDL"
 
 
+def _pastreaza_cazul(original: str, inlocuire: str) -> str:
+    if original.isupper():
+        return inlocuire.upper()
+    if original and original[0].isupper():
+        return inlocuire[0].upper() + inlocuire[1:]
+    return inlocuire
+
+
+def curata_diacritice_portal(text: str) -> str:
+    """Repară diacriticele corupte ('ã', 'ş', 'ţ' și '?' în loc de 'ș'/'ț') din răspunsurile Portal Just."""
+    if not text:
+        return ""
+    txt = str(text)
+
+    # 1. Corectare encoding ISO-8859-2 / Windows-1250 și sedile vechi
+    inlocuiri_directe = {
+        "ã": "ă", "Ã": "Ă",
+        "ş": "ș", "Ş": "Ș",
+        "ţ": "ț", "Ţ": "Ț",
+    }
+    for k_d, v_d in inlocuiri_directe.items():
+        txt = txt.replace(k_d, v_d)
+
+    # 2. Corectare '?' în cuvinte și terminații juridice uzuale (ș vs ț)
+    reguli_regex = [
+        # Terminații verbale și substantivale cu 'ș'
+        (r"([eăâîiuoaEĂÂÎIUOA])\?te\b", r"\1ște"),
+        (r"([eăâîiuoaEĂÂÎIUOA])\?ti\b", r"\1ști"),
+        (r"\b(ata|afi|înfăți|infati|depă|depa|pă|gre|sfâr|sfar|săvâr|savar)\?([aăeiî])", r"\1ș\2"),
+        (r"\b(înștiin|instiin)\?", r"\1ț"),
+        (r"\b(Bucure|Ploie|Pite|Târgovi|Targovi|One|Boto|Foc|Călăra|Calara|Re|Hu|Făltice|Faltice|Rădău|Radau|Fete|Roșio|Rosio|Buhu|Moine|Comăne|Comane)\?ti\b", r"\1ști"),
+        (r"\b(Timi|Bra|Ia|Bârlă|Barla|Olt|Arge|Mure|Cara)\?([a-zăâîșț]*)", r"\1ș\2"),
+        (r"\b(ș|s)edin\?", r"ședinț"),
+        (r"\b\?edinț", r"ședinț"),
+
+        # Rădăcini și terminații frecvente cu 'ț'
+        (r"\?eaz([ăa])\b", r"țeaz\1"),
+        (r"\?iun(e|ea|i|ii|ilor)\b", r"țiun\1"),
+        (r"\b(instan|sentin|ordonan|contesta|cita|execu|preten|solu|excep|obliga|licita|garan|penalit|renun|men|sus|ob|re|înfiin|infiin|desfiin|încuviin|incuviin|pronun|ac|sec|peti|soma|dispozi|func|no|op|cau|pozi|frac|repara|declara|constata|înregistra|inregistra|înainta|inainta|comunica|prezenta|depune|achita|înceta|inceta|judeca|audi|administr|efectua|restitui|trimite|emite|dispune|stabili|acorda|amâna|amana|suspenda|perima|declina|conexa|disjunge|rectifica|lămuri|lamuri|completa|investi|învesti|legaliza|certifica|expedia|formul|invoc|motiv|doved|prob|expertiz|evalu|lichid|partaj|evacu|rezili|rezolu|anul|constat|oblig|condamn|achit|încet|incet|clas|trimit)\?", r"\1ț"),
+        (r"\b(fa|bra|pre|so|ter|mar|ian|feb|apr|iun|iul|aug|sep|oct|noi|dec|mul|pu|to|al|atâ|ata|câ|ca|în|in)\?([ăaieîuo])", r"\1ț\2"),
+        (r"([a-zA-ZăâîșțĂÂÎȘȚ])\?(ă|ii|ilor|ile|uri|urile)\b", r"\1ț\2"),
+        # Orice '?' rămas lipit între două litere -> 'ț' (cel mai frecvent caracter pierdut în SOAP)
+        (r"([a-zA-ZăâîșțĂÂÎȘȚ])\?([a-zA-ZăâîșțĂÂÎȘȚ])", r"\1ț\2"),
+    ]
+
+    for pattern, repl in reguli_regex:
+        txt = re.sub(
+            pattern,
+            lambda m, r=repl: _pastreaza_cazul(m.group(0), m.expand(r)),
+            txt,
+            flags=re.IGNORECASE
+        )
+
+    return txt
+
+
 def formateaza_nume_institutie(raw_inst: str) -> str:
     """Transformă 'JudecatoriaONESTI' sau 'TribunalulBUCURESTI' în 'Judecătoria Onești' / 'Tribunalul București'."""
     if not raw_inst:
@@ -69,7 +125,7 @@ def formateaza_nume_institutie(raw_inst: str) -> str:
             for k_o, v_o in diacritice_orase.items():
                 rest_title = re.sub(rf"\b{k_o}\b", v_o, rest_title)
             return f"{frumos}{rest_title}".strip()
-    return txt
+    return curata_diacritice_portal(txt)
 
 
 def extrage_parti_text(info) -> str:
@@ -77,8 +133,8 @@ def extrage_parti_text(info) -> str:
         return "Nespecificate"
     linii = []
     for p in info.parti.DosarParte:
-        nume_p = str(getattr(p, "nume", "") or "").strip()
-        cal_p = str(getattr(p, "calitateParte", "") or "").strip()
+        nume_p = curata_diacritice_portal(str(getattr(p, "nume", "") or "").strip())
+        cal_p = curata_diacritice_portal(str(getattr(p, "calitateParte", "") or "").strip())
         if nume_p:
             linii.append(f"{nume_p} — {cal_p}" if cal_p else nume_p)
     return "; ".join(linii) if linii else "Nespecificate"
@@ -122,8 +178,8 @@ def cauta_dosare_dupa_parte(nume_parte: str, institutie: str = None):
             rezultate.append({
                 "numar_dosar": str(getattr(d, "numar", "") or "").strip(),
                 "institutie": formateaza_nume_institutie(str(getattr(d, "institutie", "") or "")),
-                "obiect": str(getattr(d, "obiect", "") or "").strip(),
-                "stadiu": str(getattr(d, "stadiuProcesualNume", "") or "").strip(),
+                "obiect": curata_diacritice_portal(str(getattr(d, "obiect", "") or "").strip()),
+                "stadiu": curata_diacritice_portal(str(getattr(d, "stadiuProcesualNume", "") or "").strip()),
                 "parti": extrage_parti_text(d)
             })
         return rezultate
@@ -161,7 +217,7 @@ def clasifica_prioritate_fallback(tip_solutie: str, minuta: str, are_termen_viit
 def _aplica_semnatura_cabinet(mesaj_client: str, nume_cabinet: str) -> str:
     """Asigură că mesajul pentru client se încheie întotdeauna cu denumirea exactă a cabinetului din cont."""
     semnatura = (nume_cabinet or "").strip() or "Echipa dvs. juridică"
-    txt = (mesaj_client or "").strip()
+    txt = curata_diacritice_portal(mesaj_client or "").strip()
     if not txt:
         return f"Bună ziua,\n\nVă informăm că a fost înregistrată o actualizare în dosarul dumneavoastră.\n\nCu respect,\n{semnatura}"
 
@@ -188,6 +244,9 @@ def analizeaza_cu_claude(numar_dosar, institutie, obiect, stadiu, minuta, client
         client_ai = Anthropic(api_key=cheie)
 
     semnatura_cabinet = (nume_cabinet or "").strip() or "Echipa dvs. juridică"
+    minuta_curata = curata_diacritice_portal(minuta)
+    obiect_curat = curata_diacritice_portal(obiect)
+    stadiu_curat = curata_diacritice_portal(stadiu)
 
     prompt = f"""
 Ești un avocat partener senior din Baroul București, specializat în procedură civilă și penală română, care redactează analize procedurale interne pentru echipa de avocați și informări oficiale către clienți.
@@ -196,18 +255,18 @@ DATE DOSAR:
 - Cabinet / Societate de avocatură utilizatoare: {semnatura_cabinet}
 - Număr dosar: {numar_dosar}
 - Instanță: {institutie}
-- Obiect: {obiect or 'Nespecificat'}
-- Stadiu procesual: {stadiu or 'Nespecificat'}
+- Obiect: {obiect_curat or 'Nespecificat'}
+- Stadiu procesual: {stadiu_curat or 'Nespecificat'}
 - Clientul reprezentat de cabinetul nostru: {client_nume or 'Nespecificat (identifică din părți dacă este posibil)'}
 - Părțile din dosar (Portal Just): {parti_dosar or 'Nespecificate'}
 - Context ședințe anterioare: {istoric_sedinte or 'Prima înregistrare monitorizată'}
 
 MINUTA / DISPOZIȚIA CURENTĂ DIN PORTAL JUST:
-"{minuta}"
+"{minuta_curata}"
 
 REGULI OBLIGATORII DE ANALIZĂ:
 1. DISTINCȚIE INSTANȚĂ VS. AVOCAT: Nu confunda măsurile dispuse de instanță din oficiu (ex. „comunică intimatului întâmpinarea...”) cu sarcinile avocatului. Tradu efectul procedural în acțiuni concrete pentru avocatul nostru în funcție de calitatea clientului.
-2. CORECTARE ERORI GREFIER: Dacă minuta conține greșeli evidente de redactare ale grefierului (ex. „înregistrarea” în loc de „întâmpinarea” sau „înscrisurile”), interpretează sensul juridic corect fără a propaga eroarea în mesajul către client.
+2. CORECTARE ERORI GREFIER & DIACRITICE: Folosește exclusiv limba română literară cu diacritice corecte (ă, â, î, ș, ț). Dacă minuta conține greșeli evidente de redactare ale grefierului, interpretează sensul juridic corect fără a propaga eroarea în mesajul către client.
 3. CLASIFICARE PRIORITATE:
   - "URGENT": pronunțare pe fond/excepții, admitere/respingere, suspendare, perimare, amânare de pronunțare, obligații sub sancțiunea decăderii/amenzii sau curgerea unui termen de cale de atac.
   - "IMPORTANT": acordare termen de judecată, comunicări de acte procedurale, încuviințare/administrare probe (înscrisuri, martori, expertiză).
@@ -217,7 +276,7 @@ REGULI OBLIGATORII DE ANALIZĂ:
   - OBLIGATORIU încheie mesajul EXACT cu formula:
     Cu respect,
     {semnatura_cabinet}
-  - Nu folosi NICIODATĂ formula generică „Cabinetul dvs. de avocatură”.
+- Nu folosi NICIODATĂ formula generică „Cabinetul dvs. de avocatură”.
 
 Răspunde STRICT cu un obiect JSON valid, fără text în afara acoladelor:
 {{
@@ -244,12 +303,13 @@ Răspunde STRICT cu un obiect JSON valid, fără text în afara acoladelor:
         rez = json.loads(raw)
 
         # Curățăm sarcinile și aplicăm semnătura exactă a cabinetului
+        rez["tip_solutie"] = curata_diacritice_portal(rez.get("tip_solutie", ""))
         rez["sarcini_avocat"] = notificari.formateaza_lista_sarcini(rez.get("sarcini_avocat"), separator="\n")
         rez["mesaj_client"] = _aplica_semnatura_cabinet(rez.get("mesaj_client", ""), semnatura_cabinet)
 
         are_termen = bool(rez.get("noul_termen") and str(rez.get("noul_termen")).lower() != "null")
         if not rez.get("prioritate") or (are_termen and str(rez.get("prioritate")).upper() == "ISTORIC"):
-            rez["prioritate"] = clasifica_prioritate_fallback(rez.get("tip_solutie", ""), minuta, are_termen_viitor=are_termen)
+            rez["prioritate"] = clasifica_prioritate_fallback(rez.get("tip_solutie", ""), minuta_curata, are_termen_viitor=are_termen)
         return rez
     except Exception as e:
         print(f"Eroare la procesarea AI: {e}")
@@ -281,12 +341,13 @@ def _proceseaza_un_dosar(comp_id, numar, client, ultima_minuta_db, forteaza_rean
     nume_cabinet = str(det_comp.get("nume_firma") or "").strip()
 
     inst_str = formateaza_nume_institutie(str(getattr(info, "institutie", "") or ""))
-    obiect_str = str(getattr(info, "obiect", "") or "")
-    stadiu_str = str(getattr(info, "stadiuProcesualNume", "") or "")
+    obiect_str = curata_diacritice_portal(str(getattr(info, "obiect", "") or ""))
+    stadiu_str = curata_diacritice_portal(str(getattr(info, "stadiuProcesualNume", "") or ""))
     parti_str = extrage_parti_text(info)
+    ultima_minuta_db_curata = curata_diacritice_portal(ultima_minuta_db or "")
 
     if not (getattr(info, "sedinte", None) and getattr(info.sedinte, "DosarSedinta", None)):
-        baza_date.actualizeaza_dosar(numar, comp_id, inst_str, obiect_str, stadiu_str, "", ultima_minuta_db or "Fără ședințe publicate")
+        baza_date.actualizeaza_dosar(numar, comp_id, inst_str, obiect_str, stadiu_str, "", ultima_minuta_db_curata or "Fără ședințe publicate")
         return False, None
 
     sedinte = list(info.sedinte.DosarSedinta)
@@ -299,8 +360,8 @@ def _proceseaza_un_dosar(comp_id, numar, client, ultima_minuta_db, forteaza_rean
 
     for s in sedinte:
         d_raw = getattr(s, "data", None)
-        sumar = (getattr(s, "solutieSumar", None) or "").strip()
-        sol = (getattr(s, "solutie", None) or "").strip()
+        sumar = curata_diacritice_portal((getattr(s, "solutieSumar", None) or "").strip())
+        sol = curata_diacritice_portal((getattr(s, "solutie", None) or "").strip())
         text_s = sumar or sol
 
         d_obj = None
@@ -339,9 +400,9 @@ def _proceseaza_un_dosar(comp_id, numar, client, ultima_minuta_db, forteaza_rean
     if termen_portal:
         text_pentru_ai += f" | Noul termen de judecată stabilit pe Portal Just: {termen_portal}"
 
-    baza_date.actualizeaza_dosar(numar, comp_id, inst_str, obiect_str, stadiu_str, data_sedinta, ultima_minuta_db)
+    baza_date.actualizeaza_dosar(numar, comp_id, inst_str, obiect_str, stadiu_str, data_sedinta, minuta_curenta)
 
-    if minuta_curenta != ultima_minuta_db or forteaza_reanaliza:
+    if minuta_curenta != ultima_minuta_db_curata or forteaza_reanaliza:
         analiza = analizeaza_cu_claude(
             numar, inst_str, obiect_str, stadiu_str, text_pentru_ai,
             client_nume=client, parti_dosar=parti_str, istoric_sedinte=istoric_scurt,
@@ -354,7 +415,7 @@ def _proceseaza_un_dosar(comp_id, numar, client, ultima_minuta_db, forteaza_rean
         if analiza and "_eroare" not in analiza:
             prio_tag = str(analiza.get("prioritate", "IMPORTANT")).upper()
             sarcini_curate = notificari.formateaza_lista_sarcini(analiza.get("sarcini_avocat", ""), separator="\n")
-            cale_atac_txt = analiza.get("cale_atac", "")
+            cale_atac_txt = curata_diacritice_portal(analiza.get("cale_atac", ""))
             if cale_atac_txt and cale_atac_txt.lower() not in ("null", "none", "fără cale de atac", "nu este cazul la acest moment"):
                 sarcini_extinse = f"[{prio_tag}] {sarcini_curate}\n• Cale atac: {cale_atac_txt}"
             else:
