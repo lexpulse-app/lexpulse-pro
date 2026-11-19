@@ -161,6 +161,7 @@ if not st.session_state.utilizator and "session" in st.query_params:
 def deconectare():
     st.session_state.utilizator = None
     st.session_state.keep_logged_in = False
+    st.session_state["force_logout_msg"] = True
     st.query_params.pop("session", None)
     st.rerun()
 
@@ -202,8 +203,8 @@ st.markdown("""
         background-color: #F8FAFC;
     }
 
-    /* Ascunde elementele implicite Streamlit (bara de jos, meniu, deploy) */
-    footer, #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .viewerBadge_container__1QSob {
+    /* Ascunde elementele implicite Streamlit (bara de jos, meniu, deploy, toolbar tabel) */
+    footer, #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="stElementToolbar"], .viewerBadge_container__1QSob {
         display: none !important;
         visibility: hidden !important;
     }
@@ -213,7 +214,7 @@ st.markdown("""
 
     .block-container {
         padding-top: 1.4rem !important;
-        padding-bottom: 3rem !important;
+        padding-bottom: 5rem !important;
         max-width: 1280px !important;
     }
 
@@ -487,7 +488,7 @@ st.markdown("""
     @media (max-width: 768px) {
         .block-container {
             padding-top: 2.6rem !important;
-            padding-bottom: 2rem !important;
+            padding-bottom: 85px !important;
             padding-left: 0.85rem !important;
             padding-right: 0.85rem !important;
         }
@@ -522,6 +523,9 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+if st.session_state.pop("force_logout_msg", False):
+    components.html("<script>if(window.top){window.top.postMessage({type:'errata_logout'}, '*');}</script>", height=0, width=0)
 
 # ----------------- ECRAN AUTENTIFICARE / ÎNREGISTRARE -----------------
 if not st.session_state.utilizator:
@@ -589,6 +593,11 @@ if st.session_state.get("keep_logged_in", True):
     tok_curent = _gen_session_token(user)
     if "session" not in st.query_params:
         st.query_params["session"] = tok_curent
+    components.html(
+        f"<script>if(window.top){{window.top.postMessage({{type:'errata_session', token:{json.dumps(tok_curent)}}}, '*');}}</script>",
+        height=0,
+        width=0
+    )
 
 st.sidebar.markdown(f"""
     <div style='padding: 6px 0 14px 0; display: flex; align-items: center; gap: 12px;'>
