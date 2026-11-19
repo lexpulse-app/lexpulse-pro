@@ -20,6 +20,7 @@ import baza_date
 import app
 import export_pdf
 import calendar_sync
+import notificari
 
 # Pictogramă oficială Errata (SVG Data URI pentru Favicon, PWA iOS/Android și UI)
 ERRATA_ICON_SVG = (
@@ -38,10 +39,10 @@ st.set_page_config(
     page_title="Errata | Asistent Juridic & Monitorizare Dosare",
     page_icon=ERRATA_ICON_DATA_URI,
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto"
 )
 
-# Injectare PWA Manifest & Apple Touch Icon pentru instalare pe telefon (Adaugă pe ecranul principal)
+# Injectare PWA Manifest, Apple Touch Icon & Auto-închidere Sidebar pe mobil
 components.html(f"""
 <script>
 (function() {{
@@ -83,6 +84,23 @@ components.html(f"""
         link.rel = 'manifest';
         link.href = URL.createObjectURL(blob);
         doc.head.appendChild(link);
+    }}
+
+    // Închide automat meniul lateral pe telefon după selectarea unei secțiuni
+    if (!doc.body.dataset.errataMobileNav) {{
+        doc.body.dataset.errataMobileNav = "1";
+        doc.addEventListener('click', function(e) {{
+            if (window.parent.innerWidth <= 768) {{
+                const radioLabel = e.target.closest('section[data-testid="stSidebar"] div[role="radiogroup"] label');
+                if (radioLabel) {{
+                    setTimeout(function() {{
+                        const closeBtn = doc.querySelector('section[data-testid="stSidebar"] button[data-testid="stBaseButton-headerNoPadding"]')
+                                      || doc.querySelector('button[data-testid="stSidebarCollapseButton"]');
+                        if (closeBtn) closeBtn.click();
+                    }}, 180);
+                }}
+            }}
+        }}, true);
     }}
 }})();
 </script>
@@ -159,13 +177,16 @@ def formateaza_telefon_whatsapp(telefon_raw):
 def extrage_prioritate_alerta(row):
     sarcini = str(row.get("sarcini_avocat") or "")
     if sarcini.startswith("[URGENT]"):
-        return "URGENT", sarcini.replace("[URGENT]", "", 1).strip()
+        raw_s = sarcini.replace("[URGENT]", "", 1).strip()
+        return "URGENT", notificari.formateaza_lista_sarcini(raw_s, separator="\n")
     if sarcini.startswith("[ISTORIC]"):
-        return "ISTORIC", sarcini.replace("[ISTORIC]", "", 1).strip()
+        raw_s = sarcini.replace("[ISTORIC]", "", 1).strip()
+        return "ISTORIC", notificari.formateaza_lista_sarcini(raw_s, separator="\n")
     if sarcini.startswith("[IMPORTANT]"):
-        return "IMPORTANT", sarcini.replace("[IMPORTANT]", "", 1).strip()
+        raw_s = sarcini.replace("[IMPORTANT]", "", 1).strip()
+        return "IMPORTANT", notificari.formateaza_lista_sarcini(raw_s, separator="\n")
     prio = app.clasifica_prioritate_fallback(str(row.get("tip_solutie") or ""), sarcini)
-    return prio, sarcini
+    return prio, notificari.formateaza_lista_sarcini(sarcini, separator="\n")
 
 
 # ----------------- DESIGN SYSTEM ERRATA (BLEUMARIN & AURIU-ȘAMPANIE) -----------------
@@ -181,8 +202,17 @@ st.markdown("""
         background-color: #F8FAFC;
     }
 
+    /* Ascunde elementele implicite Streamlit (bara de jos, meniu, deploy) */
+    footer, #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .viewerBadge_container__1QSob {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+    }
+
     .block-container {
-        padding-top: 1.8rem !important;
+        padding-top: 1.4rem !important;
         padding-bottom: 3rem !important;
         max-width: 1280px !important;
     }
@@ -193,7 +223,7 @@ st.markdown("""
         border-radius: 16px;
         border-bottom: 3px solid #C5A059;
         color: #FFFFFF;
-        margin-bottom: 24px;
+        margin-bottom: 22px;
         box-shadow: 0 12px 24px -6px rgba(15, 23, 42, 0.14);
         display: flex;
         justify-content: space-between;
@@ -215,16 +245,20 @@ st.markdown("""
     .metric-container {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
-        margin-bottom: 24px;
+        gap: 14px;
+        margin-bottom: 22px;
     }
     .metric-card {
         background: #FFFFFF;
-        padding: 18px 22px;
+        padding: 18px 20px;
         border-radius: 14px;
         border: 1px solid #E2E8F0;
         border-top: 3px solid #0F172A;
         box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        min-height: 102px;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     .metric-card:hover {
@@ -240,10 +274,11 @@ st.markdown("""
         margin-bottom: 6px;
     }
     .metric-value {
-        font-size: 26px;
+        font-size: 25px;
         font-weight: 800;
         color: #0F172A;
         letter-spacing: -0.03em;
+        line-height: 1.2;
     }
     .metric-badge-live {
         display: inline-flex;
@@ -265,13 +300,62 @@ st.markdown("""
         box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
     }
 
+    /* Carduri dosare pentru mobil */
+    .mobile-dosar-card {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-left: 4px solid #0F172A;
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+    }
+    .mobile-dosar-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+    }
+    .mobile-dosar-nr {
+        font-family: monospace;
+        font-weight: 700;
+        font-size: 13px;
+        background: #0F172A;
+        color: #E2C792;
+        padding: 3px 9px;
+        border-radius: 6px;
+    }
+    .mobile-dosar-inst {
+        font-size: 12px;
+        font-weight: 600;
+        color: #475569;
+        text-align: right;
+    }
+    .mobile-dosar-meta {
+        font-size: 13px;
+        color: #1E293B;
+        line-height: 1.45;
+    }
+    .mobile-dosar-minuta {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #F1F5F9;
+        font-size: 12px;
+        color: #64748B;
+        line-height: 1.4;
+    }
+
+    .desktop-only-table { display: block; }
+    .mobile-only-cards { display: none; }
+
     .ai-card {
         background: #FFFFFF;
         border-radius: 14px;
         border: 1px solid #E2E8F0;
         box-shadow: 0 4px 10px -2px rgba(15, 23, 42, 0.04);
-        padding: 24px;
-        margin-bottom: 18px;
+        padding: 22px;
+        margin-bottom: 16px;
     }
     .ai-card-header {
         display: flex;
@@ -329,6 +413,7 @@ st.markdown("""
         line-height: 1.6;
         color: #1E293B;
         margin: 12px 0 4px 0;
+        white-space: pre-line;
     }
     .sarcini-box {
         background: #FAF8F5;
@@ -338,14 +423,15 @@ st.markdown("""
         font-size: 13.5px;
         color: #1E293B;
         margin-bottom: 14px;
-        line-height: 1.55;
+        line-height: 1.6;
+        white-space: pre-line;
     }
 
     div.stButton > button:first-child {
         background: #0F172A;
         color: #E2C792;
-        border-radius: 9px;
-        padding: 9px 18px;
+        border-radius: 10px;
+        padding: 10px 18px;
         font-weight: 600;
         border: 1px solid #1E293B;
         transition: all 0.2s ease;
@@ -360,7 +446,7 @@ st.markdown("""
         background: #0F172A !important;
         color: #FFFFFF !important;
         border: none !important;
-        border-radius: 9px !important;
+        border-radius: 10px !important;
         font-weight: 600 !important;
     }
     a[kind="secondary"]:hover {
@@ -368,6 +454,7 @@ st.markdown("""
         color: #E2C792 !important;
     }
 
+    /* Sidebar stilizat ca meniu modern (fără buline radio clasice) */
     [data-testid="stSidebar"] {
         background-color: #0F172A;
         border-right: 1px solid #1E293B;
@@ -378,16 +465,60 @@ st.markdown("""
     [data-testid="stSidebar"] hr {
         border-color: #1E293B !important;
     }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child {
+        display: none !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label {
+        background: rgba(30, 41, 59, 0.55) !important;
+        border: 1px solid rgba(148, 163, 184, 0.12) !important;
+        padding: 11px 14px !important;
+        border-radius: 10px !important;
+        margin-bottom: 6px !important;
+        width: 100% !important;
+        font-weight: 600 !important;
+        transition: all 0.15s ease !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
+        background: #1E293B !important;
+        border-left: 3px solid #C5A059 !important;
+        color: #E2C792 !important;
+    }
 
     @media (max-width: 768px) {
+        .block-container {
+            padding-top: 2.6rem !important;
+            padding-bottom: 2rem !important;
+            padding-left: 0.85rem !important;
+            padding-right: 0.85rem !important;
+        }
         .metric-container {
             grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .metric-card {
+            padding: 14px 14px;
+            min-height: 94px;
+        }
+        .metric-value {
+            font-size: 21px;
+        }
+        .metric-channel-text {
+            font-size: 13px !important;
         }
         .exec-header {
+            padding: 18px 20px;
             flex-direction: column;
             align-items: flex-start;
-            gap: 12px;
+            gap: 10px;
         }
+        .exec-header h1 {
+            font-size: 19px !important;
+        }
+        .ai-card {
+            padding: 16px;
+        }
+        .desktop-only-table { display: none !important; }
+        .mobile-only-cards { display: block !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -395,11 +526,11 @@ st.markdown("""
 # ----------------- ECRAN AUTENTIFICARE / ÎNREGISTRARE -----------------
 if not st.session_state.utilizator:
     st.markdown(f"""
-        <div style='text-align: center; margin-top: 36px; margin-bottom: 24px;'>
-            <img src="{ERRATA_ICON_DATA_URI}" width="68" height="68" style="border-radius: 16px; box-shadow: 0 8px 20px rgba(15,23,42,0.18); margin-bottom: 12px;" />
-            <h1 style='font-family: "Playfair Display", Georgia, serif; color: #0F172A; font-weight: 700; font-size: 36px; margin: 0; letter-spacing: -0.02em;'>Errata</h1>
+        <div style='text-align: center; margin-top: 28px; margin-bottom: 22px;'>
+            <img src="{ERRATA_ICON_DATA_URI}" width="64" height="64" style="border-radius: 16px; box-shadow: 0 8px 20px rgba(15,23,42,0.18); margin-bottom: 10px;" />
+            <h1 style='font-family: "Playfair Display", Georgia, serif; color: #0F172A; font-weight: 700; font-size: 34px; margin: 0; letter-spacing: -0.02em;'>Errata</h1>
             <p style='color: #C5A059; font-size: 11px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; margin: 4px 0 8px 0;'>ASISTENT JURIDIC</p>
-            <p style='color: #64748B; font-size: 14px;'>Securitate. Integritate. Rapiditate. — Monitorizare inteligentă Portal Just</p>
+            <p style='color: #64748B; font-size: 13.5px;'>Securitate. Integritate. Rapiditate. — Monitorizare inteligentă Portal Just</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -536,7 +667,8 @@ if detalii_comp.get("plan") == "expirat":
 
 meniu = st.sidebar.radio(
     "Navigare",
-    ["📊 Panou Monitorizare", "📥 Import & Căutare Portal", "⚖️ Triaj & Analiză AI", "💳 Setări & Abonament"]
+    ["📊 Panou Monitorizare", "📥 Import & Căutare Portal", "⚖️ Triaj & Analiză AI", "💳 Setări & Abonament"],
+    label_visibility="collapsed"
 )
 
 
@@ -588,9 +720,9 @@ def _afiseaza_paywall_upgrade(companie_id: int, user_email: str, stripe_key: str
                 <div class="metric-title">CABINET STARTER</div>
                 <div class="metric-value">149 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
                 <p style="font-size:13px;color:#475569;margin-top:8px;line-height:1.55;">
-                    • Până la <strong>30 dosare</strong> active<br/>
-                    • Triaj AI (Urgent / Important / Istoric)<br/>
-                    • Alerte pe <code>alerte@errata.ro</code>, Telegram & Calendar
+- Până la <strong>30 dosare</strong> active<br/>
+- Triaj AI (Urgent / Important / Istoric)<br/>
+- Alerte pe <code>alerte@errata.ro</code>, Telegram & Calendar
                 </p>
             </div>
         """, unsafe_allow_html=True)
@@ -625,9 +757,9 @@ def _afiseaza_paywall_upgrade(companie_id: int, user_email: str, stripe_key: str
                 <div class="metric-title">SOCIETATE PRO</div>
                 <div class="metric-value">349 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
                 <p style="font-size:13px;color:#475569;margin-top:8px;line-height:1.55;">
-                    • Până la <strong>150 dosare</strong> active<br/>
-                    • Căutare masivă după nume parte + Import lot<br/>
-                    • Rapoarte PDF executive + Export registru
+- Până la <strong>150 dosare</strong> active<br/>
+- Căutare masivă după nume parte + Import lot<br/>
+- Rapoarte PDF executive + Export registru
                 </p>
             </div>
         """, unsafe_allow_html=True)
@@ -694,7 +826,7 @@ if meniu == "📊 Panou Monitorizare":
             </div>
             <div class="metric-card" style="border-top-color: #C5A059;">
                 <div class="metric-title">Canale Alertare</div>
-                <div class="metric-value" style="font-size: 16px; color: #0F172A; padding-top: 7px;">Email • Telegram • .ICS</div>
+                <div class="metric-value metric-channel-text" style="font-size: 16px; color: #0F172A; padding-top: 4px;">Email • Telegram • ICS</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -739,6 +871,8 @@ if meniu == "📊 Panou Monitorizare":
         if filtru_inst != "Toate instanțele":
             df_filtrat = df_filtrat[df_filtrat["institutie"] == filtru_inst]
 
+        # Tabel complet pe Desktop
+        st.markdown('<div class="desktop-only-table">', unsafe_allow_html=True)
         afisaj = df_filtrat[[
             "numar_dosar", "nume_client", "institutie", "obiect", "stadiu", "ultima_minuta"
         ]].rename(columns={
@@ -750,6 +884,32 @@ if meniu == "📊 Panou Monitorizare":
             "ultima_minuta": "Ultima Minută / Stadiu"
         })
         st.dataframe(afisaj, use_container_width=True, hide_index=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Carduri compacte pe Telefon (fără scroll orizontal)
+        cards_html = ['<div class="mobile-only-cards">']
+        for _, r_d in df_filtrat.iterrows():
+            cl_txt = str(r_d.get("nume_client") or "Nespecificat")
+            ob_txt = str(r_d.get("obiect") or "-")
+            st_txt = str(r_d.get("stadiu") or "-")
+            min_txt = str(r_d.get("ultima_minuta") or "În așteptare sincronizare")
+            if len(min_txt) > 190:
+                min_txt = min_txt[:187] + "..."
+            cards_html.append(f"""
+                <div class="mobile-dosar-card">
+                    <div class="mobile-dosar-top">
+                        <span class="mobile-dosar-nr">{r_d['numar_dosar']}</span>
+                        <span class="mobile-dosar-inst">{r_d.get('institutie', '')}</span>
+                    </div>
+                    <div class="mobile-dosar-meta">
+                        <strong>Client:</strong> {cl_txt} &bull; <strong>Stadiu:</strong> {st_txt}<br/>
+                        <strong>Obiect:</strong> {ob_txt}
+                    </div>
+                    <div class="mobile-dosar-minuta">{min_txt}</div>
+                </div>
+            """)
+        cards_html.append("</div>")
+        st.markdown("".join(cards_html), unsafe_allow_html=True)
 
         st.write("")
         c_del1, c_del2 = st.columns([3, 1])
@@ -958,6 +1118,7 @@ elif meniu == "⚖️ Triaj & Analiză AI":
             prio_lbl = "🔴 URGENT" if prio_code == "URGENT" else ("🟡 IMPORTANT" if prio_code == "IMPORTANT" else "⚪ ISTORIC")
             noul_t = row["noul_termen"] if row["noul_termen"] and str(row["noul_termen"]).lower() != "null" else "Fără termen stabilit"
             inst_frumos = app.formateaza_nume_institutie(row.get("institutie", "Instanță"))
+            mesaj_client_afis = app._aplica_semnatura_cabinet(str(row.get("mesaj_client") or ""), user["nume_firma"])
 
             st.markdown(f"""
                 <div class="ai-card">
@@ -971,7 +1132,7 @@ elif meniu == "⚖️ Triaj & Analiză AI":
                                 {('• ' + row['nume_client']) if row.get('nume_client') else ''}
                             </span>
                         </div>
-                        <div style="display: flex; gap: 8px; align-items: center;">
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                             <span class="{prio_cls}">{prio_lbl}</span>
                             <span class="prio-istoric" style="background:#0F172A;color:#E2C792;border:none;">{row['tip_solutie']}</span>
                         </div>
@@ -979,21 +1140,17 @@ elif meniu == "⚖️ Triaj & Analiză AI":
                     <div style="font-size: 13px; color: #475569; margin-bottom: 12px;">
                         <strong>Următorul Eveniment Procedural:</strong> <span style="color: #0F172A; font-weight: 700;">{noul_t}</span>
                     </div>
-                    <div class="sarcini-box">
-                        <strong>📌 Evaluare Procedurală & Sarcini Cabinet:</strong><br/>
-                        {sarcini_curate}
-                    </div>
+                    <div class="sarcini-box"><strong>📌 Evaluare Procedurală & Sarcini Cabinet:</strong>
+{sarcini_curate}</div>
                     <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748B; margin-top: 12px;">
                         Notificare Client Pre-Generată:
                     </div>
-                    <div class="client-box">
-                        {row['mesaj_client']}
-                    </div>
+                    <div class="client-box">{mesaj_client_afis}</div>
                 </div>
             """, unsafe_allow_html=True)
 
             tel_formatat = formateaza_telefon_whatsapp(row.get("contact_client"))
-            mesaj_codificat = urllib.parse.quote(row["mesaj_client"])
+            mesaj_codificat = urllib.parse.quote(mesaj_client_afis)
 
             if tel_formatat:
                 link_wa = f"https://wa.me/{tel_formatat}?text={mesaj_codificat}"
@@ -1019,7 +1176,7 @@ elif meniu == "⚖️ Triaj & Analiză AI":
                     "tip_solutie": row["tip_solutie"],
                     "noul_termen": row["noul_termen"],
                     "sarcini_avocat": sarcini_curate,
-                    "mesaj_client": row["mesaj_client"]
+                    "mesaj_client": mesaj_client_afis
                 }
                 pdf_bytes = export_pdf.genereaza_raport_dosar_pdf(
                     firma_nume=user["nume_firma"],
@@ -1027,7 +1184,7 @@ elif meniu == "⚖️ Triaj & Analiză AI":
                     client_nume=row.get("nume_client", ""),
                     institutie=inst_frumos,
                     stadiu=row.get("stadiu", "Fond"),
-                    solutie_sumar=row.get("ultima_minuta", row.get("mesaj_client", "")),
+                    solutie_sumar=row.get("ultima_minuta", mesaj_client_afis),
                     analiza=analiza_dict
                 )
                 st.download_button(
@@ -1105,16 +1262,15 @@ elif meniu == "💳 Setări & Abonament":
                     baza_date.actualizeaza_telegram_companie(companie_id, tg_val)
                     st.success("Telegram Chat ID salvat!")
                     if test_tg and tg_val.strip():
-                        import notificari
                         ok_t = notificari.trimite_notificare_telegram(
                             "TEST/2026", "Client Test", "Portal Errata",
                             {
                                 "prioritate": "URGENT",
                                 "tip_solutie": "Conexiune activă",
                                 "noul_termen": "Configurat cu succes",
-                                "cale_atac": "N/A",
-                                "sarcini_avocat": "Vei primi aici toate minutele și termenele noi.",
-                                "mesaj_client": "Alertare activată pentru cabinetul dumneavoastră."
+                                "cale_atac": "Nu este cazul la acest moment",
+                                "sarcini_avocat": ["Vei primi aici toate minutele și termenele noi."],
+                                "mesaj_client": f"Bună ziua,\n\nAlertarea pe Telegram este activată.\n\nCu respect,\n{user['nume_firma']}"
                             },
                             chat_id_destinatar=tg_val.strip()
                         )
@@ -1145,16 +1301,15 @@ elif meniu == "💳 Setări & Abonament":
                     baza_date.actualizeaza_email_companie(companie_id, em_val)
                     st.success("Adresa de email salvată!")
                     if test_em and em_val.strip():
-                        import notificari
                         ok_e = notificari.trimite_notificare_email(
                             em_val.strip(), "TEST/2026", "Client Test", "Portal Errata",
                             {
                                 "prioritate": "URGENT",
                                 "tip_solutie": "Conexiune Email Errata Activă",
                                 "noul_termen": "Configurat cu succes",
-                                "cale_atac": "N/A",
-                                "sarcini_avocat": "Vei primi aici toate minutele și termenele noi de pe alerte@errata.ro.",
-                                "mesaj_client": "Alertare pe email activată pentru cabinetul dumneavoastră."
+                                "cale_atac": "Nu este cazul la acest moment",
+                                "sarcini_avocat": ["Vei primi aici toate minutele și termenele noi de pe alerte@errata.ro."],
+                                "mesaj_client": f"Bună ziua,\n\nAlertarea pe email este activată.\n\nCu respect,\n{user['nume_firma']}"
                             }
                         )
                         if ok_e:
@@ -1176,9 +1331,9 @@ elif meniu == "💳 Setări & Abonament":
                 <div class="metric-title">CABINET STARTER</div>
                 <div class="metric-value">149 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
                 <p style="font-size:13px;color:#475569;margin-top:10px;line-height:1.6;">
-                    • Până la <strong>30 dosare</strong> active<br/>
-                    • Verificare automată zilnică Portal Just<br/>
-                    • Triaj AI + Alerte <code>alerte@errata.ro</code>, Telegram & Calendar
+- Până la <strong>30 dosare</strong> active<br/>
+- Verificare automată zilnică Portal Just<br/>
+- Triaj AI + Alerte <code>alerte@errata.ro</code>, Telegram & Calendar
                 </p>
             </div>
         """, unsafe_allow_html=True)
@@ -1213,9 +1368,9 @@ elif meniu == "💳 Setări & Abonament":
                 <div class="metric-title">SOCIETATE PRO</div>
                 <div class="metric-value">349 RON<span style="font-size:13px;color:#64748B;">/lună</span></div>
                 <p style="font-size:13px;color:#475569;margin-top:10px;line-height:1.6;">
-                    • Până la <strong>150 dosare</strong> active<br/>
-                    • Căutare masivă după nume parte + Import lot<br/>
-                    • Rapoarte PDF executive + Export registru
+- Până la <strong>150 dosare</strong> active<br/>
+- Căutare masivă după nume parte + Import lot<br/>
+- Rapoarte PDF executive + Export registru
                 </p>
             </div>
         """, unsafe_allow_html=True)
