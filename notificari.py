@@ -1,4 +1,5 @@
 import os
+import ast
 import json
 import urllib.request
 import requests
@@ -36,6 +37,30 @@ def _curata_md(text):
     return str(text).replace("_", "-").replace("*", "").replace("`", "'")
 
 
+def formateaza_lista_sarcini(sarcini_raw, separator="\n"):
+    """Transformă atât o listă Python, cât și un text serializat cu apostrofuri în bullet-uri curate."""
+    if not sarcini_raw:
+        return "• Fără sarcini urgente"
+    if isinstance(sarcini_raw, (list, tuple)):
+        items = [str(x).strip() for x in sarcini_raw if str(x).strip()]
+    else:
+        txt = str(sarcini_raw).strip()
+        if (txt.startswith("[") and txt.endswith("]")) or ("', '" in txt) or ('", "' in txt):
+            try:
+                parsed = ast.literal_eval(txt if txt.startswith("[") else f"[{txt}]")
+                if isinstance(parsed, (list, tuple)):
+                    items = [str(x).strip() for x in parsed if str(x).strip()]
+                else:
+                    items = [txt]
+            except Exception:
+                items = [p.strip().strip("'\"") for p in txt.strip("[]").split("', '") if p.strip()]
+        else:
+            items = [line.lstrip("•-* ").strip() for line in txt.splitlines() if line.strip()]
+    if not items:
+        return "• Fără sarcini urgente"
+    return separator.join(f"• {it}" for it in items)
+
+
 def trimite_notificare_telegram(numar_dosar, client, institutie, analiza, chat_id_destinatar=None):
     token = _get_bot_token()
     chat_id = str(chat_id_destinatar or "").strip()
@@ -46,21 +71,23 @@ def trimite_notificare_telegram(numar_dosar, client, institutie, analiza, chat_i
 
     prioritate = str(analiza.get("prioritate", "IMPORTANT")).upper()
     emoji_prio = "🔴" if prioritate == "URGENT" else ("🟡" if prioritate == "IMPORTANT" else "⚪")
+    titlu_prio = "ALERTĂ URGENTĂ" if prioritate == "URGENT" else ("ALERTĂ IMPORTANTĂ" if prioritate == "IMPORTANT" else "ACTUALIZARE DOSAR")
+
     tip_solutie = _curata_md(analiza.get("tip_solutie", "Nespecificat"))
     noul_termen = _curata_md(analiza.get("noul_termen", "Nespecificat"))
-    cale_atac = _curata_md(analiza.get("cale_atac", "Nespecificat"))
-    sarcini = _curata_md(analiza.get("sarcini_avocat", "Fără sarcini urgente"))
+    cale_atac = _curata_md(analiza.get("cale_atac", "Nu este cazul la acest moment"))
+    sarcini_curate = _curata_md(formateaza_lista_sarcini(analiza.get("sarcini_avocat"), separator="\n"))
     mesaj_client = _curata_md(analiza.get("mesaj_client", ""))
 
     mesaj = (
-        f"{emoji_prio} *ERRATA • ALERTĂ {prioritate}*\n"
+        f"{emoji_prio} *ERRATA • {titlu_prio}*\n"
         f"⚖️ *Dosar:* {_curata_md(numar_dosar)}\n"
         f"👤 *Client:* {_curata_md(client) or 'Nespecificat'}\n"
         f"🏛️ *Instanță:* {_curata_md(institutie)}\n\n"
         f"📌 *Soluție:* {tip_solutie}\n"
         f"📅 *Următorul termen:* {noul_termen}\n"
         f"⏳ *Cale atac / Termen legal:* {cale_atac}\n\n"
-        f"📝 *Sarcini procedurale:*\n{sarcini}\n\n"
+        f"📝 *Sarcini procedurale:*\n{sarcini_curate}\n\n"
         f"💬 *Draft mesaj client (WhatsApp):*\n"
         f"{mesaj_client}\n"
     )
@@ -100,6 +127,8 @@ def trimite_notificare_email(email_destinatar: str, numar_dosar: str, nume_clien
         badge_bg, badge_fg, badge_txt = "#FFFBEB", "#B45309", "IMPORTANT • PLANIFICARE"
 
     cale_atac = analiza.get("cale_atac") or "Fără cale de atac incidentă la acest moment"
+    sarcini_html = formateaza_lista_sarcini(analiza.get("sarcini_avocat"), separator="<br/>")
+    mesaj_client_html = str(analiza.get("mesaj_client", "")).replace("\n", "<br/>")
 
     html_body = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 0 auto; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden; background: #FFFFFF;">
@@ -135,12 +164,12 @@ def trimite_notificare_email(email_destinatar: str, numar_dosar: str, nume_clien
 
             <div style="background: #FAF8F5; border-left: 4px solid #C5A059; padding: 15px 18px; border-radius: 0 10px 10px 0; margin-bottom: 18px;">
                 <strong style="color: #0F172A; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;">📌 Evaluare Procedurală & Sarcini Cabinet</strong><br/>
-                <span style="font-size: 14px; color: #334155; line-height: 1.55; display: block; margin-top: 6px;">{analiza.get('sarcini_avocat', '')}</span>
+                <span style="font-size: 14px; color: #334155; line-height: 1.55; display: block; margin-top: 6px;">{sarcini_html}</span>
             </div>
 
             <div style="background: #F8FAFC; border-left: 4px solid #0F172A; padding: 15px 18px; border-radius: 0 10px 10px 0;">
                 <strong style="color: #0F172A; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;">💬 Notificare Client (Gata de trimis)</strong><br/>
-                <span style="font-size: 14px; color: #334155; line-height: 1.55; display: block; margin-top: 6px;">{analiza.get('mesaj_client', '')}</span>
+                <span style="font-size: 14px; color: #334155; line-height: 1.55; display: block; margin-top: 6px;">{mesaj_client_html}</span>
             </div>
 
             <div style="margin-top: 24px; text-align: center;">
@@ -193,12 +222,13 @@ def trimite_digest_matinal(email_destinatar: str, nume_firma: str, lista_actuali
     for item in lista_actualizari:
         prio = str(item.get("prioritate", "IMPORTANT")).upper()
         culoare = "#DC2626" if prio == "URGENT" else ("#B45309" if prio == "IMPORTANT" else "#64748B")
+        sarcini_item = formateaza_lista_sarcini(item.get("sarcini_avocat"), separator="<br/>")
         randuri_html += f"""
         <div style="border: 1px solid #E2E8F0; border-left: 4px solid {culoare}; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;">
             <div style="font-size: 12px; font-weight: 700; color: {culoare};">{prio} • {item.get('numar_dosar', '')} ({item.get('institutie', '')})</div>
             <div style="font-size: 14px; font-weight: 700; color: #0F172A; margin: 4px 0;">{item.get('tip_solutie', '')}</div>
             <div style="font-size: 13px; color: #475569;">Termen: <strong>{item.get('noul_termen', '-')}</strong> | Client: {item.get('nume_client', '-')}</div>
-            <div style="font-size: 13px; color: #334155; margin-top: 6px;">{item.get('sarcini_avocat', '')}</div>
+            <div style="font-size: 13px; color: #334155; margin-top: 6px;">{sarcini_item}</div>
         </div>
         """
 
