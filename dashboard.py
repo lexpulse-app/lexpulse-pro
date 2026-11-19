@@ -42,7 +42,7 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-# Injectare PWA Manifest & Apple Touch Icon
+# Injectare PWA Manifest, Apple Touch Icon & Auto-închidere Sidebar pe mobil
 components.html(f"""
 <script>
 (function() {{
@@ -84,6 +84,21 @@ components.html(f"""
         link.rel = 'manifest';
         link.href = URL.createObjectURL(blob);
         doc.head.appendChild(link);
+    }}
+
+    if (!doc.body.dataset.errataMobileNav) {{
+        doc.body.dataset.errataMobileNav = "1";
+        doc.addEventListener('click', function(e) {{
+            if (window.parent.innerWidth <= 768) {{
+                const radioLabel = e.target.closest('section[data-testid="stSidebar"] div[role="radiogroup"] label');
+                if (radioLabel) {{
+                    setTimeout(function() {{
+                        const closeBtn = doc.querySelector('section[data-testid="stSidebar"] button');
+                        if (closeBtn) closeBtn.click();
+                    }}, 180);
+                }}
+            }}
+        }}, true);
     }}
 }})();
 </script>
@@ -184,9 +199,10 @@ st.markdown("""
 
     .stApp {
         background-color: #F8FAFC;
+        overflow-x: hidden;
     }
 
-    /* Ascunde elementele implicite Streamlit (bara de jos, meniu, deploy, toolbar tabel) */
+    /* Ascunde elementele implicite Streamlit păstrând butonul >> de meniu */
     footer, #MainMenu, [data-testid="stToolbarActions"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="stElementToolbar"], .viewerBadge_container__1QSob {
         display: none !important;
         visibility: hidden !important;
@@ -330,15 +346,7 @@ st.markdown("""
         line-height: 1.4;
     }
 
-    .desktop-only-table { display: block; }
     .mobile-only-cards { display: none; }
-
-    /* Bara de navigare mobil ascunsă pe Desktop */
-    @media (min-width: 769px) {
-        [data-testid="stHorizontalBlock"]:has(.mobile-nav-anchor) {
-            display: none !important;
-        }
-    }
 
     .ai-card {
         background: #FFFFFF;
@@ -445,23 +453,26 @@ st.markdown("""
         color: #E2C792 !important;
     }
 
-    /* Sidebar stilizat ca meniu modern (fără buline radio clasice) */
+    /* Sidebar stilizat ca meniu modern */
     [data-testid="stSidebar"] {
-        background-color: #0F172A;
+        background-color: #0F172A !important;
         border-right: 1px solid #1E293B;
     }
-    [data-testid="stSidebar"] * {
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] div {
         color: #F1F5F9 !important;
     }
     [data-testid="stSidebar"] hr {
         border-color: #1E293B !important;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child {
+    section[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-of-type {
         display: none !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        background: rgba(30, 41, 59, 0.55) !important;
-        border: 1px solid rgba(148, 163, 184, 0.12) !important;
+        background: rgba(30, 41, 59, 0.65) !important;
+        border: 1px solid rgba(148, 163, 184, 0.15) !important;
         padding: 11px 14px !important;
         border-radius: 10px !important;
         margin-bottom: 6px !important;
@@ -472,32 +483,17 @@ st.markdown("""
     section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
         background: #1E293B !important;
         border-left: 3px solid #C5A059 !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p {
         color: #E2C792 !important;
     }
 
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 1.1rem !important;
+            padding-top: 2.8rem !important;
             padding-bottom: 90px !important;
             padding-left: 0.85rem !important;
             padding-right: 0.85rem !important;
-        }
-        [data-testid="stHorizontalBlock"]:has(.mobile-nav-anchor) {
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 6px !important;
-            margin-bottom: 10px !important;
-        }
-        [data-testid="stHorizontalBlock"]:has(.mobile-nav-anchor) > div[data-testid="column"] {
-            flex: 1 1 0 !important;
-            min-width: 0 !important;
-            width: auto !important;
-        }
-        [data-testid="stHorizontalBlock"]:has(.mobile-nav-anchor) button {
-            padding: 8px 4px !important;
-            font-size: 11px !important;
-            border-radius: 8px !important;
-            white-space: nowrap !important;
         }
         .metric-container {
             grid-template-columns: repeat(2, 1fr);
@@ -525,8 +521,12 @@ st.markdown("""
         .ai-card {
             padding: 16px;
         }
-        .desktop-only-table { display: none !important; }
-        .mobile-only-cards { display: block !important; }
+        [data-testid="stDataFrame"] {
+            display: none !important;
+        }
+        .mobile-only-cards {
+            display: block !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -606,33 +606,6 @@ if st.session_state.get("keep_logged_in", True):
         width=0
     )
 
-OPT_MENIU = ["📊 Panou Monitorizare", "📥 Import & Căutare Portal", "⚖️ Triaj & Analiză AI", "💳 Setări & Abonament"]
-if "meniu_activ" not in st.session_state or st.session_state["meniu_activ"] not in OPT_MENIU:
-    st.session_state["meniu_activ"] = OPT_MENIU[0]
-
-# Bara de navigare rapidă pe Telefon (vizibilă doar pe mobil)
-mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-with mc1:
-    st.markdown('<span class="mobile-nav-anchor"></span>', unsafe_allow_html=True)
-    if st.button("📊 Panou", key="mnav_0", use_container_width=True):
-        st.session_state["meniu_activ"] = OPT_MENIU[0]
-        st.rerun()
-with mc2:
-    if st.button("📥 Import", key="mnav_1", use_container_width=True):
-        st.session_state["meniu_activ"] = OPT_MENIU[1]
-        st.rerun()
-with mc3:
-    if st.button("⚖️ Triaj AI", key="mnav_2", use_container_width=True):
-        st.session_state["meniu_activ"] = OPT_MENIU[2]
-        st.rerun()
-with mc4:
-    if st.button("💳 Setări", key="mnav_3", use_container_width=True):
-        st.session_state["meniu_activ"] = OPT_MENIU[3]
-        st.rerun()
-with mc5:
-    if st.button("🚪 Ieșire", key="mnav_out", use_container_width=True):
-        deconectare()
-
 st.sidebar.markdown(f"""
     <div style='padding: 6px 0 14px 0; display: flex; align-items: center; gap: 12px;'>
         <img src="{ERRATA_ICON_DATA_URI}" width="42" height="42" style="border-radius: 10px; border: 1px solid #C5A05955;" />
@@ -698,7 +671,7 @@ if stripe_key and detalii_comp.get("plan") not in ("trial", "enterprise", "expir
             pass
 
 st.sidebar.markdown(
-    f"<div style='background:#1E293B;padding:10px 12px;border-radius:10px;margin-bottom:12px;font-size:12px;border-left:3px solid #C5A059;'>"
+    f"<div style='background:#1E293B;padding:10px 12px;border-radius:10px;margin-bottom:12px;font-size:12px;border-left:3px solid #C5A059;color:#F1F5F9 !important;'>"
     f"Plan activ: <strong style='color:#E2C792 !important;'>{detalii_comp['plan'].upper()}</strong><br/>"
     f"Capacitate: <strong>{detalii_comp['limita_dosare']} dosare</strong>"
     f"</div>",
@@ -710,8 +683,7 @@ if detalii_comp.get("plan") == "expirat":
 
 meniu = st.sidebar.radio(
     "Navigare",
-    OPT_MENIU,
-    key="meniu_activ",
+    ["📊 Panou Monitorizare", "📥 Import & Căutare Portal", "⚖️ Triaj & Analiză AI", "💳 Setări & Abonament"],
     label_visibility="collapsed"
 )
 
@@ -915,8 +887,7 @@ if meniu == "📊 Panou Monitorizare":
         if filtru_inst != "Toate instanțele":
             df_filtrat = df_filtrat[df_filtrat["institutie"] == filtru_inst]
 
-        # Tabel complet pe Desktop
-        st.markdown('<div class="desktop-only-table">', unsafe_allow_html=True)
+        # Tabel complet pe Desktop (ascuns automat pe mobil via CSS)
         afisaj = df_filtrat[[
             "numar_dosar", "nume_client", "institutie", "obiect", "stadiu", "ultima_minuta"
         ]].rename(columns={
@@ -928,9 +899,8 @@ if meniu == "📊 Panou Monitorizare":
             "ultima_minuta": "Ultima Minută / Stadiu"
         })
         st.dataframe(afisaj, use_container_width=True, hide_index=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-        # Carduri compacte pe Telefon (fără indentare ca să nu fie interpretate ca bloc de cod)
+        # Carduri compacte pe Telefon
         cards_html = ['<div class="mobile-only-cards">']
         for _, r_d in df_filtrat.iterrows():
             cl_txt = str(r_d.get("nume_client") or "Nespecificat")
