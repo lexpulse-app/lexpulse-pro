@@ -467,8 +467,15 @@ st.markdown("""
     [data-testid="stSidebar"] hr {
         border-color: #1E293B !important;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-of-type {
+    section[data-testid="stSidebar"] div[role="radiogroup"] {
+        width: 100% !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label > div:not([data-testid="stMarkdownContainer"]):not(:has(p)) {
         display: none !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label [data-testid="stMarkdownContainer"] {
+        display: block !important;
+        width: 100% !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
         background: rgba(30, 41, 59, 0.65) !important;
