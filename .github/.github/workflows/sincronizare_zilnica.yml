@@ -1,0 +1,35 @@
+name: Sincronizare Automata Portal Just
+
+on:
+  schedule:
+    # 08:30 ora României (06:30 UTC)
+    - cron: '30 6 * * 1-5'
+    # 12:30 ora României (10:30 UTC)
+    - cron: '30 10 * * 1-5'
+    # 16:30 ora României (14:30 UTC)
+    - cron: '30 14 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descarca codul proiectului
+        uses: actions/checkout@v4
+
+      - name: Configureaza Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instaleaza dependentele
+        run: pip install -r requirements.txt
+
+      - name: Ruleaza sincronizarea tuturor dosarelor
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: "Errata <alerte@errata.ro>"
+        run: python -c "import baza_date, app; baza_date.init_db(); print('Actualizari:', app.sincronizeaza_toate_dosarele())"
