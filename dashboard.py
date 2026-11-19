@@ -42,7 +42,7 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-# Injectare PWA Manifest, Apple Touch Icon & Auto-închidere Sidebar pe mobil
+# Injectare PWA Manifest & Apple Touch Icon
 components.html(f"""
 <script>
 (function() {{
@@ -84,23 +84,6 @@ components.html(f"""
         link.rel = 'manifest';
         link.href = URL.createObjectURL(blob);
         doc.head.appendChild(link);
-    }}
-
-    // Închide automat meniul lateral pe telefon după selectarea unei secțiuni
-    if (!doc.body.dataset.errataMobileNav) {{
-        doc.body.dataset.errataMobileNav = "1";
-        doc.addEventListener('click', function(e) {{
-            if (window.parent.innerWidth <= 768) {{
-                const radioLabel = e.target.closest('section[data-testid="stSidebar"] div[role="radiogroup"] label');
-                if (radioLabel) {{
-                    setTimeout(function() {{
-                        const closeBtn = doc.querySelector('section[data-testid="stSidebar"] button[data-testid="stBaseButton-headerNoPadding"]')
-                                      || doc.querySelector('button[data-testid="stSidebarCollapseButton"]');
-                        if (closeBtn) closeBtn.click();
-                    }}, 180);
-                }}
-            }}
-        }}, true);
     }}
 }})();
 </script>
@@ -204,7 +187,7 @@ st.markdown("""
     }
 
     /* Ascunde elementele implicite Streamlit (bara de jos, meniu, deploy, toolbar tabel) */
-    footer, #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="stElementToolbar"], .viewerBadge_container__1QSob {
+    footer, #MainMenu, [data-testid="stToolbarActions"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="stElementToolbar"], .viewerBadge_container__1QSob {
         display: none !important;
         visibility: hidden !important;
     }
@@ -350,6 +333,13 @@ st.markdown("""
     .desktop-only-table { display: block; }
     .mobile-only-cards { display: none; }
 
+    /* Bara de navigare mobil ascunsă pe Desktop */
+    @media (min-width: 769px) {
+        [data-testid="stHorizontalBlock"]:has(.mobile-nav-anchor) {
+            display: none !important;
+        }
+    }
+
     .ai-card {
         background: #FFFFFF;
         border-radius: 14px;
@@ -487,10 +477,27 @@ st.markdown("""
 
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 2.6rem !important;
-            padding-bottom: 85px !important;
+            padding-top: 1.1rem !important;
+            padding-bottom: 90px !important;
             padding-left: 0.85rem !important;
             padding-right: 0.85rem !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.mobile-nav-anchor) {
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            gap: 6px !important;
+            margin-bottom: 10px !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.mobile-nav-anchor) > div[data-testid="column"] {
+            flex: 1 1 0 !important;
+            min-width: 0 !important;
+            width: auto !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.mobile-nav-anchor) button {
+            padding: 8px 4px !important;
+            font-size: 11px !important;
+            border-radius: 8px !important;
+            white-space: nowrap !important;
         }
         .metric-container {
             grid-template-columns: repeat(2, 1fr);
@@ -599,6 +606,33 @@ if st.session_state.get("keep_logged_in", True):
         width=0
     )
 
+OPT_MENIU = ["📊 Panou Monitorizare", "📥 Import & Căutare Portal", "⚖️ Triaj & Analiză AI", "💳 Setări & Abonament"]
+if "meniu_activ" not in st.session_state or st.session_state["meniu_activ"] not in OPT_MENIU:
+    st.session_state["meniu_activ"] = OPT_MENIU[0]
+
+# Bara de navigare rapidă pe Telefon (vizibilă doar pe mobil)
+mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+with mc1:
+    st.markdown('<span class="mobile-nav-anchor"></span>', unsafe_allow_html=True)
+    if st.button("📊 Panou", key="mnav_0", use_container_width=True):
+        st.session_state["meniu_activ"] = OPT_MENIU[0]
+        st.rerun()
+with mc2:
+    if st.button("📥 Import", key="mnav_1", use_container_width=True):
+        st.session_state["meniu_activ"] = OPT_MENIU[1]
+        st.rerun()
+with mc3:
+    if st.button("⚖️ Triaj AI", key="mnav_2", use_container_width=True):
+        st.session_state["meniu_activ"] = OPT_MENIU[2]
+        st.rerun()
+with mc4:
+    if st.button("💳 Setări", key="mnav_3", use_container_width=True):
+        st.session_state["meniu_activ"] = OPT_MENIU[3]
+        st.rerun()
+with mc5:
+    if st.button("🚪 Ieșire", key="mnav_out", use_container_width=True):
+        deconectare()
+
 st.sidebar.markdown(f"""
     <div style='padding: 6px 0 14px 0; display: flex; align-items: center; gap: 12px;'>
         <img src="{ERRATA_ICON_DATA_URI}" width="42" height="42" style="border-radius: 10px; border: 1px solid #C5A05955;" />
@@ -676,7 +710,8 @@ if detalii_comp.get("plan") == "expirat":
 
 meniu = st.sidebar.radio(
     "Navigare",
-    ["📊 Panou Monitorizare", "📥 Import & Căutare Portal", "⚖️ Triaj & Analiză AI", "💳 Setări & Abonament"],
+    OPT_MENIU,
+    key="meniu_activ",
     label_visibility="collapsed"
 )
 
@@ -895,7 +930,7 @@ if meniu == "📊 Panou Monitorizare":
         st.dataframe(afisaj, use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # Carduri compacte pe Telefon (fără scroll orizontal)
+        # Carduri compacte pe Telefon (fără indentare ca să nu fie interpretate ca bloc de cod)
         cards_html = ['<div class="mobile-only-cards">']
         for _, r_d in df_filtrat.iterrows():
             cl_txt = str(r_d.get("nume_client") or "Nespecificat")
@@ -904,19 +939,19 @@ if meniu == "📊 Panou Monitorizare":
             min_txt = str(r_d.get("ultima_minuta") or "În așteptare sincronizare")
             if len(min_txt) > 190:
                 min_txt = min_txt[:187] + "..."
-            cards_html.append(f"""
-                <div class="mobile-dosar-card">
-                    <div class="mobile-dosar-top">
-                        <span class="mobile-dosar-nr">{r_d['numar_dosar']}</span>
-                        <span class="mobile-dosar-inst">{r_d.get('institutie', '')}</span>
-                    </div>
-                    <div class="mobile-dosar-meta">
-                        <strong>Client:</strong> {cl_txt} &bull; <strong>Stadiu:</strong> {st_txt}<br/>
-                        <strong>Obiect:</strong> {ob_txt}
-                    </div>
-                    <div class="mobile-dosar-minuta">{min_txt}</div>
-                </div>
-            """)
+            cards_html.append(
+                f'<div class="mobile-dosar-card">'
+                f'<div class="mobile-dosar-top">'
+                f'<span class="mobile-dosar-nr">{r_d["numar_dosar"]}</span>'
+                f'<span class="mobile-dosar-inst">{r_d.get("institutie", "")}</span>'
+                f'</div>'
+                f'<div class="mobile-dosar-meta">'
+                f'<strong>Client:</strong> {cl_txt} &bull; <strong>Stadiu:</strong> {st_txt}<br/>'
+                f'<strong>Obiect:</strong> {ob_txt}'
+                f'</div>'
+                f'<div class="mobile-dosar-minuta">{min_txt}</div>'
+                f'</div>'
+            )
         cards_html.append("</div>")
         st.markdown("".join(cards_html), unsafe_allow_html=True)
 
