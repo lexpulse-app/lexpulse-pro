@@ -165,7 +165,7 @@ def deconectare():
 
 
 def formateaza_telefon_whatsapp(telefon_raw):
-    if not telefon_raw:
+    if not telefon_raw or pd.isna(telefon_raw):
         return ""
     curat = "".join(filter(str.isdigit, str(telefon_raw)))
     if curat.startswith("0") and len(curat) == 10:
@@ -1137,9 +1137,13 @@ elif meniu == "⚖️ Triaj & Analiză AI":
             afisate += 1
             prio_cls = "prio-urgent" if prio_code == "URGENT" else ("prio-important" if prio_code == "IMPORTANT" else "prio-istoric")
             prio_lbl = "🔴 URGENT" if prio_code == "URGENT" else ("🟡 IMPORTANT" if prio_code == "IMPORTANT" else "⚪ ISTORIC")
-            noul_t = row["noul_termen"] if row["noul_termen"] and str(row["noul_termen"]).lower() != "null" else "Fără termen stabilit"
-            inst_frumos = app.formateaza_nume_institutie(row.get("institutie", "Instanță"))
+            raw_t = row.get("noul_termen")
+            noul_t = str(raw_t).strip() if (raw_t is not None and pd.notna(raw_t) and str(raw_t).strip().lower() not in ("", "null", "none", "nan")) else "Fără termen stabilit"
+            inst_frumos = app.formateaza_nume_institutie(str(row.get("institutie") or "Instanță"))
             mesaj_client_afis = app._aplica_semnatura_cabinet(str(row.get("mesaj_client") or ""), user["nume_firma"])
+
+            nume_cl_val = str(row.get("nume_client") or "").strip() if pd.notna(row.get("nume_client")) else ""
+            tip_sol_val = str(row.get("tip_solutie") or "Actualizare").strip()
 
             st.markdown(f"""
                 <div class="ai-card">
@@ -1150,12 +1154,12 @@ elif meniu == "⚖️ Triaj & Analiză AI":
                                 {inst_frumos}
                             </span>
                             <span style="margin-left: 8px; font-size: 13px; color: #64748B;">
-                                {('• ' + row['nume_client']) if row.get('nume_client') else ''}
+                                {('• ' + nume_cl_val) if nume_cl_val else ''}
                             </span>
                         </div>
                         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                             <span class="{prio_cls}">{prio_lbl}</span>
-                            <span class="prio-istoric" style="background:#0F172A;color:#E2C792;border:none;">{row['tip_solutie']}</span>
+                            <span class="prio-istoric" style="background:#0F172A;color:#E2C792;border:none;">{tip_sol_val}</span>
                         </div>
                     </div>
                     <div style="font-size: 13px; color: #475569; margin-bottom: 12px;">
@@ -1175,17 +1179,24 @@ elif meniu == "⚖️ Triaj & Analiză AI":
 
             if tel_formatat:
                 link_wa = f"https://wa.me/{tel_formatat}?text={mesaj_codificat}"
-                label_btn = f"📲 WhatsApp ({row.get('nume_client', 'Client')})"
+                label_btn = f"📲 WhatsApp ({nume_cl_val or 'Client'})"
             else:
                 link_wa = f"https://wa.me/?text={mesaj_codificat}"
                 label_btn = "📲 WhatsApp Client"
 
-            link_gcal = calendar_sync.genereaza_link_google_calendar(
-                row["numar_dosar"], inst_frumos, noul_t, sarcini_curate
-            )
-            ics_bytes = calendar_sync.genereaza_fisier_ics(
-                row["numar_dosar"], inst_frumos, noul_t, sarcini_curate
-            )
+            try:
+                link_gcal = calendar_sync.genereaza_link_google_calendar(
+                    str(row["numar_dosar"]), inst_frumos, noul_t, sarcini_curate
+                )
+            except Exception:
+                link_gcal = None
+
+            try:
+                ics_bytes = calendar_sync.genereaza_fisier_ics(
+                    str(row["numar_dosar"]), inst_frumos, noul_t, sarcini_curate
+                )
+            except Exception:
+                ics_bytes = b""
 
             c_wa, c_pdf, c_gcal, c_ical, c_reai = st.columns([1.3, 1.2, 1.2, 1.2, 1.1])
 
@@ -1194,24 +1205,26 @@ elif meniu == "⚖️ Triaj & Analiză AI":
 
             with c_pdf:
                 analiza_dict = {
-                    "tip_solutie": row["tip_solutie"],
-                    "noul_termen": row["noul_termen"],
+                    "tip_solutie": tip_sol_val,
+                    "noul_termen": noul_t,
                     "sarcini_avocat": sarcini_curate,
                     "mesaj_client": mesaj_client_afis
                 }
+                stadiu_val = str(row.get("stadiu") or "Fond") if pd.notna(row.get("stadiu")) else "Fond"
+                minuta_val = str(row.get("ultima_minuta") or mesaj_client_afis) if pd.notna(row.get("ultima_minuta")) else mesaj_client_afis
                 pdf_bytes = export_pdf.genereaza_raport_dosar_pdf(
                     firma_nume=user["nume_firma"],
-                    numar_dosar=row["numar_dosar"],
-                    client_nume=row.get("nume_client", ""),
+                    numar_dosar=str(row["numar_dosar"]),
+                    client_nume=nume_cl_val,
                     institutie=inst_frumos,
-                    stadiu=row.get("stadiu", "Fond"),
-                    solutie_sumar=row.get("ultima_minuta", mesaj_client_afis),
+                    stadiu=stadiu_val,
+                    solutie_sumar=minuta_val,
                     analiza=analiza_dict
                 )
                 st.download_button(
                     label="📄 Fișă PDF",
                     data=pdf_bytes,
-                    file_name=f"Errata_Fisa_{row['numar_dosar'].replace('/', '_')}.pdf",
+                    file_name=f"Errata_Fisa_{str(row['numar_dosar']).replace('/', '_')}.pdf",
                     key=f"btn_pdf_{idx}_{row.get('id', idx)}",
                     mime="application/pdf",
                     use_container_width=True
@@ -1224,19 +1237,22 @@ elif meniu == "⚖️ Triaj & Analiză AI":
                     st.button("🌐 Google Cal", disabled=True, use_container_width=True, help="Fără termen viitor consemnat", key=f"btn_gcal_dis_{idx}_{row.get('id', idx)}")
 
             with c_ical:
-                st.download_button(
-                    label="📅 Apple (.ics)",
-                    data=ics_bytes,
-                    file_name=f"Termen_{row['numar_dosar'].replace('/', '_')}.ics",
-                    key=f"btn_ics_{idx}_{row.get('id', idx)}",
-                    mime="text/calendar",
-                    use_container_width=True
-                )
+                if ics_bytes:
+                    st.download_button(
+                        label="📅 Apple (.ics)",
+                        data=ics_bytes,
+                        file_name=f"Termen_{str(row['numar_dosar']).replace('/', '_')}.ics",
+                        key=f"btn_ics_{idx}_{row.get('id', idx)}",
+                        mime="text/calendar",
+                        use_container_width=True
+                    )
+                else:
+                    st.button("📅 Apple (.ics)", disabled=True, use_container_width=True, help="Fără termen viitor consemnat", key=f"btn_ics_dis_{idx}_{row.get('id', idx)}")
 
             with c_reai:
                 if st.button("🔄 Re-analizează", key=f"btn_reai_{idx}_{row.get('id', idx)}", use_container_width=True, help="Regenerează analiza juridică cu noul motor AI"):
                     with st.spinner("Se reanalizează dosarul..."):
-                        ok_r, err_r = app.reanalizeaza_dosar_individual(companie_id, row["numar_dosar"])
+                        ok_r, err_r = app.reanalizeaza_dosar_individual(companie_id, str(row["numar_dosar"]))
                     if ok_r:
                         st.rerun()
                     elif err_r:
